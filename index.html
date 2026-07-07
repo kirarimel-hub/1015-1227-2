@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOWYA（ロウヤ）</title>
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #chat-container {
+            width: 100%;
+            max-width: 600px;
+            height: 85vh;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        #header {
+            background: #007bff;
+            color: white;
+            padding: 12px 15px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #clear-all-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        #clear-all-btn:hover {
+            background: #bd2130;
+        }
+        #link-container {
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-bottom: 1px solid #e4e6eb;
+            display: flex;
+            justify-content: center;
+        }
+        .external-link-btn {
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: background 0.2s;
+        }
+        .external-link-btn:hover {
+            background: #218838;
+        }
+        #messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .message-wrapper {
+            display: flex;
+            flex-direction: column;
+            max-width: 75%;
+            position: relative;
+        }
+        .message-wrapper.my-messages {
+            align-self: flex-end;
+            align-items: flex-end;
+        }
+        .message-wrapper.other-messages {
+            align-self: flex-start;
+            align-items: flex-start;
+        }
+        .message {
+            padding: 10px 15px;
+            border-radius: 18px;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            word-break: break-all;
+        }
+        .my-messages .message {
+            background-color: #007bff;
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+        .other-messages .message {
+            background-color: #e4e6eb;
+            color: black;
+            border-bottom-left-radius: 2px;
+        }
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.75rem;
+            margin-top: 2px;
+            padding: 2px 5px;
+        }
+        .delete-btn:hover {
+            color: #dc3545;
+            text-decoration: underline;
+        }
+        #input-container {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #e4e6eb;
+            background: #fff;
+        }
+        #message-input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid #ccd0d5;
+            border-radius: 20px;
+            outline: none;
+            font-size: 1rem;
+        }
+        #send-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 0 20px;
+            margin-left: 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #send-btn:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+<div id="chat-container">
+    <div id="header">
+        <span>匿名チャットルーム</span>
+        <button id="clear-all-btn">全削除</button>
+    </div>
+    
+    <div id="link-container">
+        <a href="https://www.low-ya.com/?srsltid=AfmBOophH0_weC16uhbCxePPBNmVVTnyLOe_MrSiVr9scfgh_4SqSFjP" target="_blank" class="external-link-btn">
+            🏠 LOWYA（ロウヤ）を開く
+        </a>
+    </div>
+
+    <div id="messages"></div>
+    
+    <div id="input-container">
+        <input type="text" id="message-input" placeholder="メッセージを入力..." autocomplete="off">
+        <button id="send-btn">送信</button>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // ⚠️ あなたの Firebase プロジェクトのコンフィグに置き換えてください
+ const firebaseConfig = {
+  apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
+  authDomain: "project-2987921418155591586.firebaseapp.com",
+  projectId: "project-2987921418155591586",
+  storageBucket: "project-2987921418155591586.firebasestorage.app",
+  messagingSenderId: "34152717352",
+  appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
+};
+
+    // Firebaseの初期化
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // 匿名ユーザー用の簡易的なランダムIDを生成（セッション中のみ維持）
+    const myId = Math.random().toString(36).substring(2, 9);
+
+    const messagesContainer = document.getElementById('messages');
+    const messageInput = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-btn');
+    const clearAllBtn = document.getElementById('clear-all-btn');
+
+    // メッセージの送信
+    async function sendMessage() {
+        const text = messageInput.value.trim();
+        if (text === '') return;
+
+        try {
+            await addDoc(collection(db, "chat_messages"), {
+                senderId: myId,
+                text: text,
+                createdAt: serverTimestamp()
+            });
+            messageInput.value = '';
+        } catch (error) {
+            console.error("メッセージの送信に失敗しました: ", error);
+        }
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    // メッセージを個別に削除する関数（グローバルに公開）
+    window.deleteMessage = async function(messageDocId) {
+        if (!confirm("このメッセージを削除しますか？")) return;
+        try {
+            await deleteDoc(doc(db, "chat_messages", messageDocId));
+        } catch (error) {
+            console.error("削除に失敗しました: ", error);
+            alert("削除に失敗しました。");
+        }
+    }
+
+    // チャット全体を一括削除する機能
+    clearAllBtn.addEventListener('click', async () => {
+        if (!confirm("本当にすべてのチャット履歴を削除しますか？戻せなくなります。")) return;
+        try {
+            const querySnapshot = await getDocs(collection(db, "chat_messages"));
+            querySnapshot.forEach(async (document) => {
+                await deleteDoc(doc(db, "chat_messages", document.id));
+            });
+        } catch (error) {
+            console.error("一括削除に失敗しました: ", error);
+            alert("削除に失敗しました。");
+        }
+    });
+
+    // メッセージのリアルタイム受信
+    const q = query(collection(db, "chat_messages"), orderBy("createdAt", "asc"));
+    onSnapshot(q, (snapshot) => {
+        messagesContainer.innerHTML = '';
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const messageId = docSnap.id;
+            
+            // 外側の包み
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('message-wrapper');
+            
+            // 吹き出し部分
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.textContent = data.text;
+            
+            // 自分が送ったか他人が送ったかでスタイル変更
+            if (data.senderId === myId) {
+                wrapper.classList.add('my-messages');
+            } else {
+                wrapper.classList.add('other-messages');
+            }
+            
+            wrapper.appendChild(messageElement);
+
+            // 削除ボタンの追加（今回は分かりやすさ優先で、誰のメッセージでも削除できるようにしてあります）
+            const deleteBtn = document.createElement('button');
+            deleteBtn.classList.add('delete-btn');
+            deleteBtn.textContent = '削除';
+            deleteBtn.setAttribute('onclick', `deleteMessage('${messageId}')`);
+            wrapper.appendChild(deleteBtn);
+            
+            messagesContainer.appendChild(wrapper);
+        });
+        // 常に最新のメッセージ（一番下）にスクロール
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    });
+</script>
+
+</body>
+</html>
