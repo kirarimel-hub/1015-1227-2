@@ -5,260 +5,67 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LOWYA（ロウヤ）</title>
     <style>
-        *, *::before, *::after {
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            background-color: #f0f2f5;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        #chat-container {
-            width: 100%;
-            max-width: 600px;
-            height: 85vh;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        #header {
-            background: #007bff;
-            color: white;
-            padding: 12px 15px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        #clear-all-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            font-weight: bold;
-        }
-        #clear-all-btn:hover {
-            background: #bd2130;
-        }
-        #link-container {
-            background: #f8f9fa;
-            padding: 10px 15px;
-            border-bottom: 1px solid #e4e6eb;
-            display: flex;
-            justify-content: center;
-        }
-        .external-link-btn {
-            background: #28a745;
-            color: white;
-            text-decoration: none;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: bold;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: background 0.2s;
-        }
-        .external-link-btn:hover {
-            background: #218838;
-        }
-        #messages {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-        .message-wrapper {
-            display: flex;
-            flex-direction: column;
-            max-width: 75%;
-            position: relative;
-        }
-        .message-wrapper.my-messages {
-            align-self: flex-end;
-            align-items: flex-end;
-        }
-        .message-wrapper.other-messages {
-            align-self: flex-start;
-            align-items: flex-start;
-        }
-        .message {
-            padding: 10px 15px;
-            border-radius: 18px;
-            font-size: 0.95rem;
-            line-height: 1.4;
-            word-break: break-all;
-            white-space: pre-wrap;
-            cursor: pointer;
-            position: relative;
-        }
-        .message img {
-            max-width: 100%;
-            border-radius: 8px;
-            margin-top: 5px;
-            display: block;
-        }
-        .my-messages .message {
-            background-color: #007bff;
-            color: white;
-            border-bottom-right-radius: 2px;
-        }
-        .other-messages .message {
-            background-color: #e4e6eb;
-            color: black;
-            border-bottom-left-radius: 2px;
-        }
-        .message-link {
-            color: #ffc107;
-            text-decoration: underline;
-            font-weight: bold;
-        }
-        .other-messages .message-link {
-            color: #007bff;
-        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #chat-container { width: 100%; max-width: 600px; height: 95vh; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+        #header { background: #007bff; color: white; padding: 12px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         
-        .reactions-display {
-            display: flex;
-            gap: 2px;
-            background: white;
-            padding: 2px 6px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-            font-size: 0.8rem;
-            position: absolute;
-            bottom: -10px;
-            right: 10px;
-            z-index: 2;
-        }
-        .reaction-badge {
-            user-select: none;
-        }
+        /* メディア関連 */
+        #media-section { background: #111; padding: 10px; }
+        #media-input-wrapper { display: flex; gap: 5px; margin-bottom: 10px; }
+        #media-url-input { flex: 1; padding: 8px; border-radius: 4px; border: none; font-size: 0.9rem; }
+        #media-share-btn { background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+        
+        #media-container { display: flex; flex-direction: column; transition: all 0.3s; }
+        #media-menu { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 5px 10px; }
+        .media-tabs { display: flex; gap: 5px; }
+        .media-tab-btn { background: #444; color: #ccc; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; }
+        .media-tab-btn.active { background: #007bff; color: white; }
+        #media-screen { width: 100%; height: 200px; background: #000; }
+        #media-screen iframe { width: 100%; height: 100%; border: none; }
+        .minimized #media-screen { height: 0; }
 
-        .reaction-picker {
-            display: none;
-            gap: 8px;
-            background: white;
-            padding: 5px 10px;
-            border-radius: 20px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-            position: absolute;
-            top: -40px;
-            z-index: 10;
-        }
-        .reaction-picker span {
-            font-size: 1.2rem;
-            cursor: pointer;
-            transition: transform 0.1s;
-        }
-        .reaction-picker span:hover {
-            transform: scale(1.3);
-        }
-
-        .delete-btn {
-            background: none;
-            border: none;
-            color: #888;
-            cursor: pointer;
-            font-size: 0.75rem;
-            margin-top: 12px;
-            padding: 2px 5px;
-        }
-        .delete-btn:hover {
-            color: #dc3545;
-            text-decoration: underline;
-        }
-        #input-container {
-            display: flex;
-            padding: 15px;
-            border-top: 1px solid #e4e6eb;
-            background: #fff;
-            align-items: flex-end;
-            gap: 8px;
-        }
-        #image-label {
-            background: #e4e6eb;
-            color: #333;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 1.2rem;
-            user-select: none;
-            margin-bottom: 2px;
-        }
-        #image-label:hover {
-            background: #ccd0d5;
-        }
-        #image-input {
-            display: none;
-        }
-        #message-input {
-            flex: 1;
-            padding: 10px 15px;
-            border: 1px solid #ccd0d5;
-            border-radius: 20px;
-            outline: none;
-            font-size: 1rem;
-            resize: none;
-            height: 40px;
-            max-height: 100px;
-            font-family: inherit;
-            line-height: 1.2;
-        }
-        #send-btn {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-weight: bold;
-            height: 40px;
-        }
-        #send-btn:hover {
-            background: #0056b3;
-        }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        .message-wrapper { display: flex; flex-direction: column; max-width: 80%; }
+        .my-messages { align-self: flex-end; align-items: flex-end; }
+        .other-messages { align-self: flex-start; align-items: flex-start; }
+        .message { padding: 10px; border-radius: 15px; background: #e4e6eb; font-size: 0.9rem; }
+        .my-messages .message { background: #007bff; color: white; }
+        
+        #input-container { display: flex; padding: 10px; border-top: 1px solid #ddd; gap: 8px; }
+        #message-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
+        #send-btn { background: #007bff; color: white; border: none; padding: 0 20px; border-radius: 20px; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div id="chat-container">
     <div id="header">
-        <span>自動チャットでお答えします</span>
-        <button id="clear-all-btn">全削除</button>
+        <span>LOWYAチャット</span>
+        <button id="clear-all-btn" style="background:red; color:white; border:none; border-radius:4px;">全削除</button>
     </div>
-    
-    <div id="link-container">
-        <a href="https://www.low-ya.com/?srsltid=AfmBOophH0_weC16uhbCxePPBNmVVTnyLOe_MrSiVr9scfgh_4SqSFjP" target="_blank" class="external-link-btn">
-            🏠 LOWYA（ロウヤ）を開く
-        </a>
+
+    <!-- メディア共有セクション -->
+    <div id="media-section">
+        <div id="media-input-wrapper">
+            <input type="text" id="media-url-input" placeholder="YouTube/SpotifyのURLを貼る">
+            <button id="media-share-btn" onclick="shareMedia()">共有</button>
+        </div>
+        <div id="media-container">
+            <div id="media-menu">
+                <div class="media-tabs">
+                    <button class="media-tab-btn active" id="tab-youtube" onclick="switchMediaTab('youtube')">YouTube</button>
+                    <button class="media-tab-btn" id="tab-spotify" onclick="switchMediaTab('spotify')">Spotify</button>
+                </div>
+                <button id="media-toggle-btn" style="background:none; border:none; color:white; cursor:pointer;" onclick="toggleMedia()">➖</button>
+            </div>
+            <div id="media-screen"></div>
+        </div>
     </div>
 
     <div id="messages"></div>
-    
     <div id="input-container">
-        <label id="image-label" for="image-input">＋</label>
-        <input type="file" id="image-input" accept="image/*">
-        
-        <textarea id="message-input" placeholder="メッセージを入力..." autocomplete="off"></textarea>
+        <input type="text" id="message-input" placeholder="メッセージを入力...">
         <button id="send-btn">送信</button>
     </div>
 </div>
@@ -278,208 +85,52 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-    const myId = Math.random().toString(36).substring(2, 9);
 
-    const messagesContainer = document.getElementById('messages');
-    const messageInput = document.getElementById('message-input');
-    const imageInput = document.getElementById('image-input');
-    const sendBtn = document.getElementById('send-btn');
-    const clearAllBtn = document.getElementById('clear-all-btn');
-
-    messageInput.addEventListener('input', () => {
-        messageInput.style.height = '40px';
-        messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
-    });
-
-    function linkify(text) {
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        return text.replace(urlRegex, (url) => {
-            return `<a href="${url}" target="_blank" class="message-link">${url}</a>`;
-        });
-    }
-
-    async function sendMessage() {
-        const text = messageInput.value.trim();
-        const file = imageInput.files[0];
-        
-        if (text === '' && !file) return;
-
-        let imageDataUrl = "";
-        if (file) {
-            imageDataUrl = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(file);
-            });
-        }
-
-        messageInput.value = '';
-        messageInput.style.height = '40px';
-        imageInput.value = '';
-
-        try {
-            await addDoc(collection(db, "chat_messages"), {
-                senderId: myId,
-                text: text,
-                image: imageDataUrl,
-                reactions: {},
-                createdAt: serverTimestamp()
-            });
-        } catch (error) {
-            console.error("送信エラー: ", error);
-        }
-    }
-
-    sendBtn.addEventListener('click', sendMessage);
-
-    window.toggleReaction = async function(messageId, emoji) {
-        const messageRef = doc(db, "chat_messages", messageId);
-        try {
-            const picker = document.getElementById(`picker-${messageId}`);
-            if (picker) picker.style.display = 'none';
-
-            const snapshot = document.getElementById(messageId);
-            let currentReactions = JSON.parse(snapshot.getAttribute('data-reactions') || '{}');
-            
-            if (currentReactions[emoji]) {
-                delete currentReactions[emoji];
-            } else {
-                currentReactions[emoji] = true;
-            }
-
-            await updateDoc(messageRef, {
-                reactions: currentReactions
-            });
-        } catch (error) {
-            console.error("スタンプエラー: ", error);
-        }
+    // 共有メディアの保存（Firebaseの別コレクションへ）
+    window.shareMedia = async () => {
+        const url = document.getElementById('media-url-input').value;
+        const type = url.includes('spotify') ? 'spotify' : 'youtube';
+        await addDoc(collection(db, "shared_media"), { url, type, createdAt: serverTimestamp() });
+        document.getElementById('media-url-input').value = '';
     };
 
-    window.showPicker = function(e, messageId) {
-        e.stopPropagation();
-        const picker = document.getElementById(`picker-${messageId}`);
-        if (picker.style.display === 'flex') {
-            picker.style.display = 'none';
+    // プレイヤーのレンダリング
+    onSnapshot(query(collection(db, "shared_media"), orderBy("createdAt", "desc")), (snap) => {
+        if (snap.empty) return;
+        const latest = snap.docs[0].data();
+        const screen = document.getElementById('media-screen');
+        if (latest.type === 'youtube') {
+            const id = latest.url.match(/(?:v=|youtu\.be\/)([^&?]+)/)[1];
+            screen.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}?autoplay=1"></iframe>`;
         } else {
-            document.querySelectorAll('.reaction-picker').forEach(p => p.style.display = 'none');
-            picker.style.display = 'flex';
+            screen.innerHTML = `<iframe src="${latest.url.replace('open.', 'open.embed.')}"></iframe>`;
         }
+    });
+
+    // 最小化
+    window.toggleMedia = () => {
+        const c = document.getElementById('media-container');
+        c.classList.toggle('minimized');
     };
 
-    document.addEventListener('click', () => {
-        document.querySelectorAll('.reaction-picker').forEach(p => p.style.display = 'none');
-    });
+    // チャット処理
+    document.getElementById('send-btn').onclick = async () => {
+        const input = document.getElementById('message-input');
+        if (!input.value) return;
+        await addDoc(collection(db, "chat_messages"), { text: input.value, createdAt: serverTimestamp() });
+        input.value = '';
+    };
 
-    window.deleteMessage = async function(messageDocId) {
-        if (!confirm("このメッセージを削除しますか？")) return;
-        try {
-            await deleteDoc(doc(db, "chat_messages", messageDocId));
-        } catch (error) {
-            alert("削除に失敗しました。");
-        }
-    }
-
-    async function executeClearAll() {
-        try {
-            const querySnapshot = await getDocs(collection(db, "chat_messages"));
-            for (const document of querySnapshot.docs) {
-                await deleteDoc(doc(db, "chat_messages", document.id));
-            }
-            console.log("21:00の自動全削除を実行しました。");
-        } catch (error) {
-            console.error("自動全削除エラー: ", error);
-        }
-    }
-
-    clearAllBtn.addEventListener('click', async () => {
-        if (!confirm("本当にすべてのチャット履歴を削除しますか？戻せなくなります。")) return;
-        await executeClearAll();
-    });
-
-    function checkAutoDeleteTime() {
-        const now = new Date();
-        if (now.getHours() === 21 && now.getMinutes() === 0) {
-            if (!localStorage.getItem('lastAutoDeleteDay') || localStorage.getItem('lastAutoDeleteDay') != now.getDate()) {
-                localStorage.setItem('lastAutoDeleteDay', now.getDate());
-                executeClearAll();
-            }
-        }
-    }
-    setInterval(checkAutoDeleteTime, 30000);
-    checkAutoDeleteTime();
-
-    const q = query(collection(db, "chat_messages"), orderBy("createdAt", "asc"));
-    onSnapshot(q, (snapshot) => {
-        messagesContainer.innerHTML = '';
-        snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            const messageId = docSnap.id;
-            const reactions = data.reactions || {};
-            
-            const wrapper = document.createElement('div');
-            wrapper.classList.add('message-wrapper');
-            wrapper.id = messageId;
-            wrapper.setAttribute('data-reactions', JSON.stringify(reactions));
-            
-            const messageElement = document.createElement('div');
-            messageElement.classList.add('message');
-            messageElement.setAttribute('onclick', `showPicker(event, '${messageId}')`);
-            
-            if (data.text) {
-                const textSpan = document.createElement('span');
-                textSpan.innerHTML = linkify(data.text);
-                messageElement.appendChild(textSpan);
-            }
-            
-            if (data.image) {
-                const img = document.createElement('img');
-                img.src = data.image;
-                messageElement.appendChild(img);
-            }
-
-            const picker = document.createElement('div');
-            picker.classList.add('reaction-picker');
-            picker.id = `picker-${messageId}`;
-            ['❤️', '😂', '😮', '😢', '👍'].forEach(emoji => {
-                const span = document.createElement('span');
-                span.textContent = emoji;
-                span.setAttribute('onclick', `toggleReaction('${messageId}', '${emoji}')`);
-                picker.appendChild(span);
-            });
-            wrapper.appendChild(picker);
-
-            const reactionKeys = Object.keys(reactions);
-            if (reactionKeys.length > 0) {
-                const displayArea = document.createElement('div');
-                displayArea.classList.add('reactions-display');
-                reactionKeys.forEach(emoji => {
-                    const badge = document.createElement('span');
-                    badge.classList.add('reaction-badge');
-                    badge.textContent = emoji;
-                    displayArea.appendChild(badge);
-                });
-                messageElement.appendChild(displayArea);
-            }
-            
-            if (data.senderId === myId) {
-                wrapper.classList.add('my-messages');
-            } else {
-                wrapper.classList.add('other-messages');
-            }
-            
-            wrapper.appendChild(messageElement);
-
-            const deleteBtn = document.createElement('button');
-            deleteBtn.classList.add('delete-btn');
-            deleteBtn.textContent = '削除';
-            deleteBtn.setAttribute('onclick', `deleteMessage('${messageId}')`);
-            wrapper.appendChild(deleteBtn);
-            
-            messagesContainer.appendChild(wrapper);
+    onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
+        const container = document.getElementById('messages');
+        container.innerHTML = '';
+        snap.forEach(d => {
+            const div = document.createElement('div');
+            div.className = 'message-wrapper';
+            div.innerHTML = `<div class="message">${d.data().text}</div>`;
+            container.appendChild(div);
         });
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
     });
 </script>
-
 </body>
 </html>
