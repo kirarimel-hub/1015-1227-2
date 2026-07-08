@@ -6,8 +6,8 @@
     <title>LOWYA（ロウヤ）</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        #chat-container { width: 100%; max-width: 600px; height: 95vh; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; -webkit-tap-highlight-color: transparent; }
+        #chat-container { width: 100%; max-width: 600px; height: 95vh; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; position: relative; }
         #header { background: #007bff; color: white; padding: 10px 12px; display: flex; justify-content: flex-end; align-items: center; flex-shrink: 0; }
         
         /* メディア関連 */
@@ -27,27 +27,33 @@
         .minimized #media-screen { height: 0; }
 
         /* チャットエリア */
-        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; background: #fff; }
-        .message-wrapper { display: flex; flex-direction: column; max-width: 80%; position: relative; }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; background: #fff; }
+        .message-wrapper { display: flex; flex-direction: column; max-width: 75%; position: relative; margin-bottom: 5px; }
         .my-messages { align-self: flex-end; align-items: flex-end; }
         .other-messages { align-self: flex-start; align-items: flex-start; }
         
-        /* メッセージと個別削除ボタン */
-        .message-box { display: flex; align-items: center; gap: 5px; max-width: 100%; }
-        .my-messages .message-box { flex-direction: row-reverse; }
-        
-        .message { padding: 10px; border-radius: 15px; background: #e4e6eb; font-size: 0.9rem; word-break: break-all; white-space: pre-wrap; }
-        .message img { max-width: 120px; max-height: 120px; object-fit: contain; border-radius: 8px; margin-top: 5px; display: block; }
+        .message-row { display: flex; align-items: flex-end; gap: 8px; max-width: 100%; }
+        .my-messages .message-row { flex-direction: row-reverse; }
+
+        /* メッセージ本体 */
+        .message { padding: 10px 14px; border-radius: 18px; background: #e4e6eb; font-size: 0.9rem; word-break: break-all; white-space: pre-wrap; cursor: pointer; transition: transform 0.1s; position: relative; user-select: none; }
+        .message:active { transform: scale(0.98); }
         .my-messages .message { background: #007bff; color: white; }
         
-        .delete-btn { background: none; border: none; color: #ff4d4d; font-size: 0.75rem; cursor: pointer; padding: 0 5px; opacity: 0; transition: opacity 0.2s; }
-        .message-wrapper:hover .delete-btn { opacity: 1; }
+        /* リアクション表示バッジ */
+        .reaction-badge-container { display: flex; gap: 3px; position: absolute; bottom: -12px; background: white; padding: 2px 6px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.15); border: 1px solid #eee; font-size: 0.75rem; cursor: pointer; z-index: 2; pointer-events: auto; color: #333; }
+        .my-messages .reaction-badge-container { right: 10px; }
+        .other-messages .reaction-badge-container { left: 10px; }
 
-        /* スタンプエリア */
-        #stamp-container { display: flex; gap: 8px; padding: 5px 10px; background: #f0f2f5; border-top: 1px solid #ddd; overflow-x: auto; flex-shrink: 0; }
-        .stamp-btn { width: 40px; height: 40px; cursor: pointer; border: none; background: none; padding: 0; transition: transform 0.1s; }
-        .stamp-btn:hover { transform: scale(1.1); }
-        .stamp-btn img { width: 100%; height: 100%; object-fit: contain; }
+        /* インスタ風ポップアップメニュー */
+        .reaction-popup { display: none; position: absolute; background: white; border-radius: 30px; padding: 5px 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); gap: 8px; z-index: 999; animation: popUp 0.15s ease-out; border: 1px solid #ddd; }
+        @keyframes popUp { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .reaction-emoji-btn { font-size: 1.3rem; border: none; background: none; cursor: pointer; padding: 0 2px; transition: transform 0.1s; }
+        .reaction-emoji-btn:hover { transform: scale(1.25); }
+
+        /* 個別削除リンク */
+        .msg-delete-link { font-size: 0.7rem; color: #aaa; text-decoration: none; cursor: pointer; visibility: hidden; margin: 0 4px; padding-bottom: 2px; }
+        .message-wrapper:hover .msg-delete-link { visibility: visible; }
         
         #input-container { display: flex; padding: 10px; border-top: 1px solid #ddd; gap: 8px; background: white; flex-shrink: 0; }
         #message-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
@@ -83,11 +89,13 @@
 
     <div id="messages"></div>
 
-    <div id="stamp-container">
-        <button class="stamp-btn" data-url="https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=100&auto=format&fit=crop&q=60"><img src="https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=100&auto=format&fit=crop&q=60" alt="猫"></button>
-        <button class="stamp-btn" data-url="https://images.unsplash.com/photo-1537151625747-768eb642d6fd?w=100&auto=format&fit=crop&q=60"><img src="https://images.unsplash.com/photo-1537151625747-768eb642d6fd?w=100&auto=format&fit=crop&q=60" alt="犬"></button>
-        <button class="stamp-btn" data-url="https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=100&auto=format&fit=crop&q=60"><img src="https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=100&auto=format&fit=crop&q=60" alt="いいね"></button>
-        <button class="stamp-btn" data-url="https://images.unsplash.com/photo-1494253109108-2e30c049369b?w=100&auto=format&fit=crop&q=60"><img src="https://images.unsplash.com/photo-1494253109108-2e30c049369b?w=100&auto=format&fit=crop&q=60" alt="スマイル"></button>
+    <div id="global-reaction-popup" class="reaction-popup">
+        <button class="reaction-emoji-btn" data-emoji="👍">👍</button>
+        <button class="reaction-emoji-btn" data-emoji="❤️">❤️</button>
+        <button class="reaction-emoji-btn" data-emoji="😂">😂</button>
+        <button class="reaction-emoji-btn" data-emoji="😮">😮</button>
+        <button class="reaction-emoji-btn" data-emoji="😢">😢</button>
+        <button class="reaction-emoji-btn" data-emoji="🙏">🙏</button>
     </div>
 
     <div id="input-container">
@@ -100,7 +108,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
@@ -111,33 +119,45 @@
         appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const myId = Math.random().toString(36).substring(2, 9);
+    // 🌟 Firebaseの初期化を完全ガード。エラーが起きてもYouTube処理を殺さない
+    let db = null;
+    try {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+    } catch (e) {
+        console.error("Firebaseの初期化に失敗しました。オフライン動作に切り替えます:", e);
+    }
 
+    const myId = Math.random().toString(36).substring(2, 9);
     let player = null; 
     let isUpdatingFromFirebase = false; 
     let currentVideoId = "JFf3uASYM4E"; 
+    let activeMessageId = null;
 
     const container = document.getElementById('messages');
+    const popup = document.getElementById('global-reaction-popup');
 
     function scrollToBottom() {
         setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
     }
 
-    // YouTubeプレイヤーの生成
+    // 🌟 YouTubeプレイヤーの生成（一番最初に、何があっても絶対に単体で起動するように配置）
     window.onYouTubeIframeAPIReady = function() {
-        player = new YT.Player('youtube-player', {
-            height: '100%',
-            width: '100%',
-            videoId: currentVideoId, 
-            playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1 },
-            events: { 'onStateChange': onPlayerStateChange }
-        });
+        try {
+            player = new YT.Player('youtube-player', {
+                height: '100%',
+                width: '100%',
+                videoId: currentVideoId, 
+                playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 }, // 自動再生をONに
+                events: { 'onStateChange': onPlayerStateChange }
+            });
+        } catch (e) {
+            console.error("YouTubeプレイヤーの作成に失敗しました:", e);
+        }
     };
 
     async function onPlayerStateChange(event) {
-        if (!player || isUpdatingFromFirebase || !currentVideoId) return;
+        if (!player || isUpdatingFromFirebase || !currentVideoId || !db) return;
         const statusRef = doc(db, "shared_media_v4", "current");
         let stateString = "paused";
         if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
@@ -151,21 +171,23 @@
                 updatedBy: myId,
                 timestamp: Date.now()
             });
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("状態送信エラー(無視してOK):", e); }
     }
 
-    // 4秒おきの定期同期
+    // 定期同期ループ
     setInterval(async () => {
-        if (player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase && currentVideoId) {
-            const statusRef = doc(db, "shared_media_v4", "current");
-            await setDoc(statusRef, {
-                type: 'youtube',
-                videoId: currentVideoId,
-                state: "playing",
-                currentTime: player.getCurrentTime(),
-                updatedBy: myId,
-                timestamp: Date.now()
-            }, { merge: true });
+        if (db && player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase && currentVideoId) {
+            try {
+                const statusRef = doc(db, "shared_media_v4", "current");
+                await setDoc(statusRef, {
+                    type: 'youtube',
+                    videoId: currentVideoId,
+                    state: "playing",
+                    currentTime: player.getCurrentTime(),
+                    updatedBy: myId,
+                    timestamp: Date.now()
+                }, { merge: true });
+            } catch (e) { }
         }
     }, 4000);
 
@@ -182,19 +204,25 @@
 
         if (url.includes('spotify.com')) {
             const embedUrl = url.replace('open.spotify.com/', 'open.spotify.com/embed/');
-            await setDoc(doc(db, "shared_media_v4", "current"), { type: 'spotify', url: embedUrl, updatedBy: myId, timestamp: Date.now() });
+            if (db) {
+                try { await setDoc(doc(db, "shared_media_v4", "current"), { type: 'spotify', url: embedUrl, updatedBy: myId, timestamp: Date.now() }); } catch(e){}
+            }
         } else {
             const videoId = getYouTubeId(url);
             if (videoId) {
                 currentVideoId = videoId;
-                await setDoc(doc(db, "shared_media_v4", "current"), {
-                    type: 'youtube',
-                    videoId: videoId,
-                    state: "playing",
-                    currentTime: 0,
-                    updatedBy: myId,
-                    timestamp: Date.now()
-                });
+                if (db) {
+                    try {
+                        await setDoc(doc(db, "shared_media_v4", "current"), {
+                            type: 'youtube',
+                            videoId: videoId,
+                            state: "playing",
+                            currentTime: 0,
+                            updatedBy: myId,
+                            timestamp: Date.now()
+                        });
+                    } catch(e){}
+                }
                 isUpdatingFromFirebase = true;
                 if (player && player.loadVideoById) {
                     player.loadVideoById({ videoId: videoId, startSeconds: 0 });
@@ -207,48 +235,55 @@
         document.getElementById('media-url-input').value = '';
     };
 
-    // Firebaseからのリアルタイム動画同期
-    onSnapshot(doc(db, "shared_media_v4", "current"), (snapshot) => {
-        if (!snapshot.exists()) return;
-        const data = snapshot.data();
-        if (data.updatedBy === myId) return;
+    // 映像リアルタイム同期
+    if (db) {
+        try {
+            onSnapshot(doc(db, "shared_media_v4", "current"), (snapshot) => {
+                if (!snapshot.exists()) return;
+                const data = snapshot.data();
+                if (data.updatedBy === myId) return;
 
-        isUpdatingFromFirebase = true;
+                isUpdatingFromFirebase = true;
 
-        if (data.type === 'spotify') {
-            switchMediaTab('spotify');
-            document.getElementById('spotify-player').src = data.url;
-            isUpdatingFromFirebase = false;
-            return;
-        }
+                if (data.type === 'spotify') {
+                    switchMediaTab('spotify');
+                    document.getElementById('spotify-player').src = data.url;
+                    isUpdatingFromFirebase = false;
+                    return;
+                }
 
-        switchMediaTab('youtube');
-        
-        if (data.videoId && data.videoId !== currentVideoId) {
-            currentVideoId = data.videoId;
-            if (player && player.loadVideoById) {
-                player.loadVideoById({ videoId: currentVideoId, startSeconds: data.currentTime || 0 });
-            }
-        }
-
-        if (player && player.getPlayerState) {
-            if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
-            if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
-            
-            const localTime = player.getCurrentTime();
-            if (data.currentTime && Math.abs(localTime - data.currentTime) > 3.5) {
-                player.seekTo(data.currentTime, true);
-            }
-        }
-        setTimeout(() => { isUpdatingFromFirebase = false; }, 1500);
-    });
+                switchMediaTab('youtube');
+                if (data.videoId && data.videoId !== currentVideoId) {
+                    currentVideoId = data.videoId;
+                    if (player && player.loadVideoById) {
+                        player.loadVideoById({ videoId: currentVideoId, startSeconds: data.currentTime || 0 });
+                    }
+                }
+                if (player && player.getPlayerState) {
+                    if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
+                    if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
+                    
+                    const localTime = player.getCurrentTime();
+                    if (data.currentTime && Math.abs(localTime - data.currentTime) > 3.5) {
+                        player.seekTo(data.currentTime, true);
+                    }
+                }
+                setTimeout(() => { isUpdatingFromFirebase = false; }, 1500);
+            });
+        } catch(e) { console.error("動画同期リスナーエラー:", e); }
+    }
 
     // チャット送信処理
     document.getElementById('send-btn').onclick = async () => {
         const input = document.getElementById('message-input');
-        if (!input.value.trim()) return;
+        if (!input.value.trim() || !db) return;
         try {
-            await addDoc(collection(db, "chat_messages"), { text: input.value, senderId: myId, createdAt: serverTimestamp() });
+            await addDoc(collection(db, "chat_messages"), { 
+                text: input.value, 
+                senderId: myId, 
+                createdAt: serverTimestamp(),
+                reactions: {}
+            });
             input.value = '';
         } catch (e) { console.error(e); }
     };
@@ -257,61 +292,124 @@
         if (e.key === 'Enter') document.getElementById('send-btn').click();
     });
 
-    // スタンプ送信処理
-    document.querySelectorAll('.stamp-btn').forEach(btn => {
-        btn.onclick = async () => {
-            const stampUrl = btn.getAttribute('data-url');
+    // リアクションポップアップメニューの制御
+    window.openReactionMenu = function(e, msgId) {
+        e.stopPropagation();
+        activeMessageId = msgId;
+        
+        const rect = e.currentTarget.getBoundingClientRect();
+        const containerRect = document.getElementById('chat-container').getBoundingClientRect();
+        
+        let topPosition = rect.top - containerRect.top - 45;
+        let leftPosition = rect.left - containerRect.left + (rect.width / 2) - 100;
+        
+        if (leftPosition < 10) leftPosition = 10;
+        if (leftPosition > containerRect.width - 210) leftPosition = containerRect.width - 210;
+
+        popup.style.top = `${topPosition}px`;
+        popup.style.left = `${leftPosition}px`;
+        popup.style.display = 'flex';
+    };
+
+    document.addEventListener('click', () => {
+        popup.style.display = 'none';
+    });
+
+    // リアクションボタン処理
+    document.querySelectorAll('.reaction-emoji-btn').forEach(btn => {
+        btn.onclick = async (e) => {
+            e.stopPropagation();
+            if (!activeMessageId || !db) return;
+            
+            const selectedEmoji = btn.textContent;
+            const msgRef = doc(db, "chat_messages", activeMessageId);
+            
+            popup.style.display = 'none';
+
             try {
-                await addDoc(collection(db, "chat_messages"), { text: "", image: stampUrl, senderId: myId, createdAt: serverTimestamp() });
-            } catch (e) { console.error("スタンプ送信エラー:", e); }
+                const snap = await getDocs(query(collection(db, "chat_messages")));
+                let currentReactions = {};
+                snap.forEach(d => {
+                    if(d.id === activeMessageId) currentReactions = d.data().reactions || {};
+                });
+
+                if (currentReactions[selectedEmoji] && currentReactions[selectedEmoji].includes(myId)) {
+                    currentReactions[selectedEmoji] = currentReactions[selectedEmoji].filter(id => id !== myId);
+                    if (currentReactions[selectedEmoji].length === 0) delete currentReactions[selectedEmoji];
+                } else {
+                    if (!currentReactions[selectedEmoji]) currentReactions[selectedEmoji] = [];
+                    currentReactions[selectedEmoji].push(myId);
+                }
+
+                await updateDoc(msgRef, { reactions: currentReactions });
+            } catch (err) { console.error(err); }
         };
     });
 
-    // チャット表示・受信
-    onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
-        container.innerHTML = '';
-        snap.forEach(d => {
-            const data = d.data();
-            const div = document.createElement('div');
-            div.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
-            
-            const boxDiv = document.createElement('div');
-            boxDiv.className = 'message-box';
+    // チャット受信
+    if (db) {
+        try {
+            onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
+                container.innerHTML = '';
+                snap.forEach(d => {
+                    const data = d.data();
+                    const msgId = d.id;
+                    const reactions = data.reactions || {};
 
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'message';
-            
-            if (data.text) {
-                msgDiv.textContent = data.text;
-            } else if (data.image) {
-                const img = document.createElement('img');
-                img.src = data.image;
-                img.onload = scrollToBottom;
-                msgDiv.appendChild(img);
-            }
+                    const wrapper = document.createElement('div');
+                    wrapper.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
+                    
+                    const rowDiv = document.createElement('div');
+                    rowDiv.className = 'message-row';
 
-            boxDiv.appendChild(msgDiv);
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = 'message';
+                    msgDiv.textContent = data.text;
+                    msgDiv.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`);
 
-            // 個別削除ボタン
-            const delBtn = document.createElement('button');
-            delBtn.className = 'delete-btn';
-            delBtn.textContent = '❌';
-            delBtn.onclick = async () => {
-                if (confirm("このメッセージを削除しますか？")) {
-                    await deleteDoc(doc(db, "chat_messages", d.id));
-                }
-            };
-            boxDiv.appendChild(delBtn);
+                    let totalReactionCount = 0;
+                    const badgeDiv = document.createElement('div');
+                    badgeDiv.className = 'reaction-badge-container';
+                    badgeDiv.style.display = 'none';
+                    badgeDiv.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`);
 
-            div.appendChild(boxDiv);
-            container.appendChild(div);
-        });
-        scrollToBottom();
-    });
+                    let badgeText = "";
+                    for (const [emoji, users] of Object.entries(reactions)) {
+                        if (users.length > 0) {
+                            badgeText += `${emoji}${users.length} `;
+                            totalReactionCount += users.length;
+                        }
+                    }
+                    if (totalReactionCount > 0) {
+                        badgeDiv.textContent = badgeText.trim();
+                        badgeDiv.style.display = 'flex';
+                        msgDiv.appendChild(badgeDiv);
+                    }
+
+                    rowDiv.appendChild(msgDiv);
+
+                    const delLink = document.createElement('span');
+                    delLink.className = 'msg-delete-link';
+                    delLink.textContent = '削除';
+                    delLink.onclick = async (e) => {
+                        e.stopPropagation();
+                        if (confirm("このメッセージを削除しますか？")) {
+                            await deleteDoc(doc(db, "chat_messages", msgId));
+                        }
+                    };
+                    rowDiv.appendChild(delLink);
+
+                    wrapper.appendChild(rowDiv);
+                    container.appendChild(wrapper);
+                });
+                scrollToBottom();
+            });
+        } catch(e){}
+    }
 
     // 全削除処理
     document.getElementById('clear-all-btn').onclick = async () => {
-        if (!confirm("本当にすべてのチャット履歴を削除しますか？")) return;
+        if (!db || !confirm("本当にすべてのチャット履歴を削除しますか？")) return;
         try {
             const snap = await getDocs(query(collection(db, "chat_messages")));
             const deletePromises = [];
