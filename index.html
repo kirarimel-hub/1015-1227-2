@@ -76,7 +76,7 @@
     </div>
 </div>
 
-<!-- 🌟 YouTube API をここに移動して読み込みエラーを完全に防止 -->
+<!-- YouTube IFrame API -->
 <script src="https://www.youtube.com/iframe_api"></script>
 
 <script type="module">
@@ -98,7 +98,8 @@
 
     let player = null; 
     let isUpdatingFromFirebase = false; 
-    let currentVideoId = "";
+    // 🌟 初期読み込みバグを防ぐため、最初からLo-Fi音楽動画(例: JFf3uASYM4E)をセット
+    let currentVideoId = "JFf3uASYM4E"; 
 
     const container = document.getElementById('messages');
 
@@ -113,8 +114,8 @@
         player = new YT.Player('youtube-player', {
             height: '100%',
             width: '100%',
-            videoId: '', 
-            playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+            videoId: currentVideoId, 
+            playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1 },
             events: { 'onStateChange': onPlayerStateChange }
         });
     };
@@ -153,7 +154,7 @@
         }
     }, 4000);
 
-    // YouTube URLから動画IDを抜き出す
+    // YouTube URLから動画IDを確実に抜き出す
     function getYouTubeId(url) {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
         const match = url.match(regExp);
@@ -211,7 +212,7 @@
         if (data.videoId && data.videoId !== currentVideoId) {
             currentVideoId = data.videoId;
             if (player && player.loadVideoById) {
-                player.loadVideoById({ videoId: currentVideoId, startSeconds: data.currentTime });
+                player.loadVideoById({ videoId: currentVideoId, startSeconds: data.currentTime || 0 });
             }
         }
 
@@ -219,7 +220,7 @@
             if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
             if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
             const localTime = player.getCurrentTime();
-            if (Math.abs(localTime - data.currentTime) > 2.0) player.seekTo(data.currentTime, true);
+            if (data.currentTime && Math.abs(localTime - data.currentTime) > 2.0) player.seekTo(data.currentTime, true);
         }
 
         setTimeout(() => { isUpdatingFromFirebase = false; }, 600);
@@ -261,7 +262,6 @@
         } catch (e) { console.error("送信エラー:", e); }
     };
 
-    // エンターキーでの送信対応
     document.getElementById('message-input').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') document.getElementById('send-btn').click();
     });
