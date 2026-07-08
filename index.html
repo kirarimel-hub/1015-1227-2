@@ -8,7 +8,7 @@
         *, *::before, *::after { box-sizing: border-box; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
         #chat-container { width: 100%; max-width: 600px; height: 95vh; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
-        #header { background: #007bff; color: white; padding: 12px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        #header { background: #007bff; color: white; padding: 10px 12px; display: flex; justify-content: flex-end; align-items: center; flex-shrink: 0; }
         
         /* メディア関連 */
         #media-section { background: #111; padding: 10px; flex-shrink: 0; }
@@ -28,12 +28,26 @@
 
         /* チャットエリア */
         #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; background: #fff; }
-        .message-wrapper { display: flex; flex-direction: column; max-width: 80%; }
+        .message-wrapper { display: flex; flex-direction: column; max-width: 80%; position: relative; }
         .my-messages { align-self: flex-end; align-items: flex-end; }
-        .other-messages { align-self: start; align-items: start; }
+        .other-messages { align-self: flex-start; align-items: flex-start; }
+        
+        /* メッセージと個別削除ボタン */
+        .message-box { display: flex; align-items: center; gap: 5px; max-width: 100%; }
+        .my-messages .message-box { flex-direction: row-reverse; }
+        
         .message { padding: 10px; border-radius: 15px; background: #e4e6eb; font-size: 0.9rem; word-break: break-all; white-space: pre-wrap; }
-        .message img { max-width: 100%; border-radius: 8px; margin-top: 5px; display: block; }
+        .message img { max-width: 120px; max-height: 120px; object-fit: contain; border-radius: 8px; margin-top: 5px; display: block; }
         .my-messages .message { background: #007bff; color: white; }
+        
+        .delete-btn { background: none; border: none; color: #ff4d4d; font-size: 0.75rem; cursor: pointer; padding: 0 5px; opacity: 0; transition: opacity 0.2s; }
+        .message-wrapper:hover .delete-btn { opacity: 1; }
+
+        /* スタンプエリア */
+        #stamp-container { display: flex; gap: 8px; padding: 5px 10px; background: #f0f2f5; border-top: 1px solid #ddd; overflow-x: auto; flex-shrink: 0; }
+        .stamp-btn { width: 40px; height: 40px; cursor: pointer; border: none; background: none; padding: 0; transition: transform 0.1s; }
+        .stamp-btn:hover { transform: scale(1.1); }
+        .stamp-btn img { width: 100%; height: 100%; object-fit: contain; }
         
         #input-container { display: flex; padding: 10px; border-top: 1px solid #ddd; gap: 8px; background: white; flex-shrink: 0; }
         #message-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
@@ -44,8 +58,7 @@
 
 <div id="chat-container">
     <div id="header">
-        <span>自動チャットがお答えします</span>
-        <button id="clear-all-btn" style="background:#dc3545; color:white; border:none; border-radius:4px; padding: 4px 8px; cursor:pointer;">全削除</button>
+        <button id="clear-all-btn" style="background:#dc3545; color:white; border:none; border-radius:4px; padding: 5px 10px; cursor:pointer; font-size:0.85rem;">全削除</button>
     </div>
 
     <div id="media-section">
@@ -69,6 +82,14 @@
     </div>
 
     <div id="messages"></div>
+
+    <div id="stamp-container">
+        <button class="stamp-btn" data-url="https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=100&auto=format&fit=crop&q=60"><img src="https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=100&auto=format&fit=crop&q=60" alt="猫"></button>
+        <button class="stamp-btn" data-url="https://images.unsplash.com/photo-1537151625747-768eb642d6fd?w=100&auto=format&fit=crop&q=60"><img src="https://images.unsplash.com/photo-1537151625747-768eb642d6fd?w=100&auto=format&fit=crop&q=60" alt="犬"></button>
+        <button class="stamp-btn" data-url="https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=100&auto=format&fit=crop&q=60"><img src="https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=100&auto=format&fit=crop&q=60" alt="いいね"></button>
+        <button class="stamp-btn" data-url="https://images.unsplash.com/photo-1494253109108-2e30c049369b?w=100&auto=format&fit=crop&q=60"><img src="https://images.unsplash.com/photo-1494253109108-2e30c049369b?w=100&auto=format&fit=crop&q=60" alt="スマイル"></button>
+    </div>
+
     <div id="input-container">
         <input type="text" id="message-input" placeholder="メッセージを入力...">
         <button id="send-btn">送信</button>
@@ -104,7 +125,7 @@
         setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
     }
 
-    // YouTubeプレイヤー生成
+    // YouTubeプレイヤーの生成
     window.onYouTubeIframeAPIReady = function() {
         player = new YT.Player('youtube-player', {
             height: '100%',
@@ -117,7 +138,7 @@
 
     async function onPlayerStateChange(event) {
         if (!player || isUpdatingFromFirebase || !currentVideoId) return;
-        const statusRef = doc(db, "shared_media_v3", "current");
+        const statusRef = doc(db, "shared_media_v4", "current");
         let stateString = "paused";
         if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
         
@@ -133,9 +154,10 @@
         } catch (e) { console.error(e); }
     }
 
+    // 4秒おきの定期同期
     setInterval(async () => {
         if (player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase && currentVideoId) {
-            const statusRef = doc(db, "shared_media_v3", "current");
+            const statusRef = doc(db, "shared_media_v4", "current");
             await setDoc(statusRef, {
                 type: 'youtube',
                 videoId: currentVideoId,
@@ -153,18 +175,19 @@
         return (match && match[1].length === 11) ? match[1] : null;
     }
 
+    // 動画共有ボタン
     document.getElementById('media-share-btn').onclick = async () => {
         const url = document.getElementById('media-url-input').value.trim();
         if (!url) return;
 
         if (url.includes('spotify.com')) {
             const embedUrl = url.replace('open.spotify.com/', 'open.spotify.com/embed/');
-            await setDoc(doc(db, "shared_media_v3", "current"), { type: 'spotify', url: embedUrl, updatedBy: myId, timestamp: Date.now() });
+            await setDoc(doc(db, "shared_media_v4", "current"), { type: 'spotify', url: embedUrl, updatedBy: myId, timestamp: Date.now() });
         } else {
             const videoId = getYouTubeId(url);
             if (videoId) {
                 currentVideoId = videoId;
-                await setDoc(doc(db, "shared_media_v3", "current"), {
+                await setDoc(doc(db, "shared_media_v4", "current"), {
                     type: 'youtube',
                     videoId: videoId,
                     state: "playing",
@@ -176,7 +199,7 @@
                 if (player && player.loadVideoById) {
                     player.loadVideoById({ videoId: videoId, startSeconds: 0 });
                 }
-                setTimeout(() => { isUpdatingFromFirebase = false; }, 1000);
+                setTimeout(() => { isUpdatingFromFirebase = false; }, 1200);
             } else {
                 alert("正しいYouTubeのURLを入力してください");
             }
@@ -184,7 +207,8 @@
         document.getElementById('media-url-input').value = '';
     };
 
-    onSnapshot(doc(db, "shared_media_v3", "current"), (snapshot) => {
+    // Firebaseからのリアルタイム動画同期
+    onSnapshot(doc(db, "shared_media_v4", "current"), (snapshot) => {
         if (!snapshot.exists()) return;
         const data = snapshot.data();
         if (data.updatedBy === myId) return;
@@ -212,14 +236,14 @@
             if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
             
             const localTime = player.getCurrentTime();
-            if (data.currentTime && Math.abs(localTime - data.currentTime) > 2.5) {
+            if (data.currentTime && Math.abs(localTime - data.currentTime) > 3.5) {
                 player.seekTo(data.currentTime, true);
             }
         }
-        setTimeout(() => { isUpdatingFromFirebase = false; }, 1200);
+        setTimeout(() => { isUpdatingFromFirebase = false; }, 1500);
     });
 
-    // チャット送信
+    // チャット送信処理
     document.getElementById('send-btn').onclick = async () => {
         const input = document.getElementById('message-input');
         if (!input.value.trim()) return;
@@ -233,7 +257,17 @@
         if (e.key === 'Enter') document.getElementById('send-btn').click();
     });
 
-    // チャット受信
+    // スタンプ送信処理
+    document.querySelectorAll('.stamp-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const stampUrl = btn.getAttribute('data-url');
+            try {
+                await addDoc(collection(db, "chat_messages"), { text: "", image: stampUrl, senderId: myId, createdAt: serverTimestamp() });
+            } catch (e) { console.error("スタンプ送信エラー:", e); }
+        };
+    });
+
+    // チャット表示・受信
     onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
         container.innerHTML = '';
         snap.forEach(d => {
@@ -241,16 +275,41 @@
             const div = document.createElement('div');
             div.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
             
+            const boxDiv = document.createElement('div');
+            boxDiv.className = 'message-box';
+
             const msgDiv = document.createElement('div');
             msgDiv.className = 'message';
-            msgDiv.textContent = data.text;
-            div.appendChild(msgDiv);
+            
+            if (data.text) {
+                msgDiv.textContent = data.text;
+            } else if (data.image) {
+                const img = document.createElement('img');
+                img.src = data.image;
+                img.onload = scrollToBottom;
+                msgDiv.appendChild(img);
+            }
+
+            boxDiv.appendChild(msgDiv);
+
+            // 個別削除ボタン
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-btn';
+            delBtn.textContent = '❌';
+            delBtn.onclick = async () => {
+                if (confirm("このメッセージを削除しますか？")) {
+                    await deleteDoc(doc(db, "chat_messages", d.id));
+                }
+            };
+            boxDiv.appendChild(delBtn);
+
+            div.appendChild(boxDiv);
             container.appendChild(div);
         });
         scrollToBottom();
     });
 
-    // 🌟 全削除処理（他のエラーに巻き込まれない独立構造）
+    // 全削除処理
     document.getElementById('clear-all-btn').onclick = async () => {
         if (!confirm("本当にすべてのチャット履歴を削除しますか？")) return;
         try {
@@ -261,9 +320,7 @@
             });
             await Promise.all(deletePromises);
             alert("すべてのチャットを削除しました！");
-        } catch (e) { 
-            alert("削除に失敗しました: " + e.message); 
-        }
+        } catch (e) { alert("削除に失敗しました: " + e.message); }
     };
 
     function switchMediaTab(type) {
