@@ -103,6 +103,12 @@
             line-height: 1.4;
             word-break: break-all;
         }
+        .message img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 5px;
+            display: block;
+        }
         .my-messages .message {
             background-color: #007bff;
             color: white;
@@ -131,6 +137,28 @@
             padding: 15px;
             border-top: 1px solid #e4e6eb;
             background: #fff;
+            align-items: center;
+            gap: 8px;
+        }
+        #image-label {
+            background: #e4e6eb;
+            color: #333;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1.2rem;
+            user-select: none;
+        }
+        #image-label:hover {
+            background: #ccd0d5;
+        }
+        #image-input {
+            display: none;
         }
         #message-input {
             flex: 1;
@@ -144,8 +172,7 @@
             background: #007bff;
             color: white;
             border: none;
-            padding: 0 20px;
-            margin-left: 10px;
+            padding: 10px 20px;
             border-radius: 20px;
             cursor: pointer;
             font-weight: bold;
@@ -172,6 +199,9 @@
     <div id="messages"></div>
     
     <div id="input-container">
+        <label id="image-label" for="image-input">＋</label>
+        <input type="file" id="image-input" accept="image/*">
+        
         <input type="text" id="message-input" placeholder="メッセージを入力..." autocomplete="off">
         <button id="send-btn">送信</button>
     </div>
@@ -181,15 +211,15 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // ⚠️ あなたの Firebase プロジェクトのコンフィグに置き換えてください
- const firebaseConfig = {
-  apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
-  authDomain: "project-2987921418155591586.firebaseapp.com",
-  projectId: "project-2987921418155591586",
-  storageBucket: "project-2987921418155591586.firebasestorage.app",
-  messagingSenderId: "34152717352",
-  appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
-};
+    // あなたの Firebase プロジェクトのコンフィグを設定済みです
+    const firebaseConfig = {
+        apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
+        authDomain: "project-2987921418155591586.firebaseapp.com",
+        projectId: "project-2987921418155591586",
+        storageBucket: "project-2987921418155591586.firebasestorage.app",
+        messagingSenderId: "34152717352",
+        appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
+    };
 
     // Firebaseの初期化
     const app = initializeApp(firebaseConfig);
@@ -200,23 +230,43 @@
 
     const messagesContainer = document.getElementById('messages');
     const messageInput = document.getElementById('message-input');
+    const imageInput = document.getElementById('image-input');
     const sendBtn = document.getElementById('send-btn');
     const clearAllBtn = document.getElementById('clear-all-btn');
 
-    // メッセージの送信
+    // メッセージと画像の送信
     async function sendMessage() {
         const text = messageInput.value.trim();
-        if (text === '') return;
+        const file = imageInput.files[0];
+        
+        // テキストも画像もない場合は何もしない
+        if (text === '' && !file) return;
+
+        let imageDataUrl = "";
+
+        // 画像がある場合はBase64の文字データに変換する
+        if (file) {
+            imageDataUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 入力欄を先に空にする（送信ボタン連打対策）
+        messageInput.value = '';
+        imageInput.value = '';
 
         try {
             await addDoc(collection(db, "chat_messages"), {
                 senderId: myId,
                 text: text,
+                image: imageDataUrl, // 画像データ（ない場合は空）
                 createdAt: serverTimestamp()
             });
-            messageInput.value = '';
         } catch (error) {
             console.error("メッセージの送信に失敗しました: ", error);
+            alert("送信に失敗しました。");
         }
     }
 
@@ -241,9 +291,9 @@
         if (!confirm("本当にすべてのチャット履歴を削除しますか？戻せなくなります。")) return;
         try {
             const querySnapshot = await getDocs(collection(db, "chat_messages"));
-            querySnapshot.forEach(async (document) => {
+            for (const document of querySnapshot.docs) {
                 await deleteDoc(doc(db, "chat_messages", document.id));
-            });
+            }
         } catch (error) {
             console.error("一括削除に失敗しました: ", error);
             alert("削除に失敗しました。");
@@ -265,7 +315,20 @@
             // 吹き出し部分
             const messageElement = document.createElement('div');
             messageElement.classList.add('message');
-            messageElement.textContent = data.text;
+            
+            // テキストがあれば表示
+            if (data.text) {
+                const textSpan = document.createElement('span');
+                textSpan.textContent = data.text;
+                messageElement.appendChild(textSpan);
+            }
+            
+            // 画像があれば表示
+            if (data.image) {
+                const img = document.createElement('img');
+                img.src = data.image;
+                messageElement.appendChild(img);
+            }
             
             // 自分が送ったか他人が送ったかでスタイル変更
             if (data.senderId === myId) {
@@ -276,7 +339,7 @@
             
             wrapper.appendChild(messageElement);
 
-            // 削除ボタンの追加（今回は分かりやすさ優先で、誰のメッセージでも削除できるようにしてあります）
+            // 削除ボタンの追加
             const deleteBtn = document.createElement('button');
             deleteBtn.classList.add('delete-btn');
             deleteBtn.textContent = '削除';
