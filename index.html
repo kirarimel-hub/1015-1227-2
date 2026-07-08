@@ -105,6 +105,25 @@
 </div>
 
 <script src="https://www.youtube.com/iframe_api"></script>
+<script>
+    // 🌟 グローバル変数を通常のscriptタグで安全に定義（エラーで死なない環境を作る）
+    window.player = null; 
+    window.currentVideoId = "JFf3uASYM4E"; 
+    window.isUpdatingFromFirebase = false;
+
+    // YouTubeプレイヤー生成を完全に独立化
+    window.onYouTubeIframeAPIReady = function() {
+        try {
+            window.player = new YT.Player('youtube-player', {
+                height: '100%',
+                width: '100%',
+                videoId: window.currentVideoId, 
+                playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+                events: { 'onStateChange': window.onPlayerStateChangeCallback }
+            });
+        } catch (e) { console.error("YouTube Player Init Error:", e); }
+    };
+</script>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -119,19 +138,16 @@
         appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
     };
 
-    // 🌟 Firebaseの初期化を完全ガード。エラーが起きてもYouTube処理を殺さない
+    // Firebase初期化のエラーをここで完全に閉じ込める
     let db = null;
     try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
     } catch (e) {
-        console.error("Firebaseの初期化に失敗しました。オフライン動作に切り替えます:", e);
+        console.error("Firebaseの読み込みに失敗しました（チャットのみ無効化されます）:", e);
     }
 
     const myId = Math.random().toString(36).substring(2, 9);
-    let player = null; 
-    let isUpdatingFromFirebase = false; 
-    let currentVideoId = "JFf3uASYM4E"; 
     let activeMessageId = null;
 
     const container = document.getElementById('messages');
@@ -141,23 +157,9 @@
         setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
     }
 
-    // 🌟 YouTubeプレイヤーの生成（一番最初に、何があっても絶対に単体で起動するように配置）
-    window.onYouTubeIframeAPIReady = function() {
-        try {
-            player = new YT.Player('youtube-player', {
-                height: '100%',
-                width: '100%',
-                videoId: currentVideoId, 
-                playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 }, // 自動再生をONに
-                events: { 'onStateChange': onPlayerStateChange }
-            });
-        } catch (e) {
-            console.error("YouTubeプレイヤーの作成に失敗しました:", e);
-        }
-    };
-
-    async function onPlayerStateChange(event) {
-        if (!player || isUpdatingFromFirebase || !currentVideoId || !db) return;
+    // YouTubeの状態変化を外部scriptから引き取る
+    window.onPlayerStateChangeCallback = async function(event) {
+        if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
         const statusRef = doc(db, "shared_media_v4", "current");
         let stateString = "paused";
         if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
@@ -165,25 +167,25 @@
         try {
             await setDoc(statusRef, {
                 type: 'youtube',
-                videoId: currentVideoId,
+                videoId: window.currentVideoId,
                 state: stateString,
-                currentTime: player.getCurrentTime(),
+                currentTime: window.player.getCurrentTime(),
                 updatedBy: myId,
                 timestamp: Date.now()
             });
-        } catch (e) { console.error("状態送信エラー(無視してOK):", e); }
-    }
+        } catch (e) { }
+    };
 
     // 定期同期ループ
     setInterval(async () => {
-        if (db && player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase && currentVideoId) {
+        if (db && window.player && window.player.getPlayerState && window.player.getPlayerState() === YT.PlayerState.PLAYING && !window.isUpdatingFromFirebase && window.currentVideoId) {
             try {
                 const statusRef = doc(db, "shared_media_v4", "current");
                 await setDoc(statusRef, {
                     type: 'youtube',
-                    videoId: currentVideoId,
+                    videoId: window.currentVideoId,
                     state: "playing",
-                    currentTime: player.getCurrentTime(),
+                    currentTime: window.player.getCurrentTime(),
                     updatedBy: myId,
                     timestamp: Date.now()
                 }, { merge: true });
@@ -210,7 +212,7 @@
         } else {
             const videoId = getYouTubeId(url);
             if (videoId) {
-                currentVideoId = videoId;
+                window.currentVideoId = videoId;
                 if (db) {
                     try {
                         await setDoc(doc(db, "shared_media_v4", "current"), {
@@ -223,11 +225,11 @@
                         });
                     } catch(e){}
                 }
-                isUpdatingFromFirebase = true;
-                if (player && player.loadVideoById) {
-                    player.loadVideoById({ videoId: videoId, startSeconds: 0 });
+                window.isUpdatingFromFirebase = true;
+                if (window.player && window.player.loadVideoById) {
+                    window.player.loadVideoById({ videoId: videoId, startSeconds: 0 });
                 }
-                setTimeout(() => { isUpdatingFromFirebase = false; }, 1200);
+                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
             } else {
                 alert("正しいYouTubeのURLを入力してください");
             }
@@ -235,7 +237,7 @@
         document.getElementById('media-url-input').value = '';
     };
 
-    // 映像リアルタイム同期
+    // 映像リアルタイム同期（Firebaseが動いている場合のみ）
     if (db) {
         try {
             onSnapshot(doc(db, "shared_media_v4", "current"), (snapshot) => {
@@ -243,34 +245,34 @@
                 const data = snapshot.data();
                 if (data.updatedBy === myId) return;
 
-                isUpdatingFromFirebase = true;
+                window.isUpdatingFromFirebase = true;
 
                 if (data.type === 'spotify') {
                     switchMediaTab('spotify');
                     document.getElementById('spotify-player').src = data.url;
-                    isUpdatingFromFirebase = false;
+                    window.isUpdatingFromFirebase = false;
                     return;
                 }
 
                 switchMediaTab('youtube');
-                if (data.videoId && data.videoId !== currentVideoId) {
-                    currentVideoId = data.videoId;
-                    if (player && player.loadVideoById) {
-                        player.loadVideoById({ videoId: currentVideoId, startSeconds: data.currentTime || 0 });
+                if (data.videoId && data.videoId !== window.currentVideoId) {
+                    window.currentVideoId = data.videoId;
+                    if (window.player && window.player.loadVideoById) {
+                        window.player.loadVideoById({ videoId: window.currentVideoId, startSeconds: data.currentTime || 0 });
                     }
                 }
-                if (player && player.getPlayerState) {
-                    if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
-                    if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
+                if (window.player && window.player.getPlayerState) {
+                    if (data.state === "paused" && window.player.getPlayerState() !== YT.PlayerState.PAUSED) window.player.pauseVideo();
+                    if (data.state === "playing" && window.player.getPlayerState() !== YT.PlayerState.PLAYING) window.player.playVideo();
                     
-                    const localTime = player.getCurrentTime();
+                    const localTime = window.player.getCurrentTime();
                     if (data.currentTime && Math.abs(localTime - data.currentTime) > 3.5) {
-                        player.seekTo(data.currentTime, true);
+                        window.player.seekTo(data.currentTime, true);
                     }
                 }
-                setTimeout(() => { isUpdatingFromFirebase = false; }, 1500);
+                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1500);
             });
-        } catch(e) { console.error("動画同期リスナーエラー:", e); }
+        } catch(e) { }
     }
 
     // チャット送信処理
@@ -432,7 +434,7 @@
         } else {
             ytEl.style.display = 'none';
             spEl.style.display = 'block';
-            if (player && player.pauseVideo) player.pauseVideo();
+            if (window.player && window.player.pauseVideo) window.player.pauseVideo();
         }
     }
 
