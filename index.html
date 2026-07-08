@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LOWYA（ロウヤ）</title>
+    <title>LOWYA（ロウヤ）- 同期シアター</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
@@ -44,7 +44,7 @@
 
 <div id="chat-container">
     <div id="header">
-        <span>自動チャットがお答えします</span>
+        <span>LOWYA シアターチャット 🎬</span>
         <button id="clear-all-btn" style="background:#dc3545; color:white; border:none; border-radius:4px; padding: 4px 8px; cursor:pointer;">全削除</button>
     </div>
 
@@ -79,7 +79,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
@@ -90,60 +90,36 @@
         appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
     };
 
-    // Firebaseの初期化
-    let db;
-    try {
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-    } catch (error) {
-        console.error("Firebase初期化エラー:", error);
-    }
-
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
     const myId = Math.random().toString(36).substring(2, 9);
+
     let player = null; 
     let isUpdatingFromFirebase = false; 
-    let currentVideoId = "JFf3uASYM4E"; // 初期Lo-Fi動画
+    let currentVideoId = "JFf3uASYM4E"; 
 
     const container = document.getElementById('messages');
 
     function scrollToBottom() {
-        setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
+        setTimeout(() => {
+            container.scrollTop = container.scrollHeight;
+        }, 50);
     }
 
     // YouTube APIの初期化
     window.onYouTubeIframeAPIReady = function() {
-        try {
-            player = new YT.Player('youtube-player', {
-                height: '100%',
-                width: '100%',
-                videoId: currentVideoId, 
-                playerVars: { 'autoplay': 1, 'mute': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 },
-                events: { 
-                    'onStateChange': onPlayerStateChange,
-                    'onReady': onPlayerReady
-                }
-            });
-        } catch (e) { console.error("YouTubeプレイヤー作成エラー:", e); }
+        player = new YT.Player('youtube-player', {
+            height: '100%',
+            width: '100%',
+            videoId: currentVideoId, 
+            playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+            events: { 'onStateChange': onPlayerStateChange }
+        });
     };
-
-    // プレイヤーの準備が整ったときの処理
-    function onPlayerReady(event) {
-        event.target.playVideo();
-
-        // 🌟 保険：自動再生ブロック対策。画面をどこでも1回クリックすれば強制的に再生を開始
-        document.body.addEventListener('click', () => {
-            if (player && typeof player.playVideo === 'function') {
-                if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                    player.playVideo();
-                }
-            }
-        }, { once: true });
-    }
 
     // プレイヤーの操作イベント検知
     async function onPlayerStateChange(event) {
-        if (!player || isUpdatingFromFirebase || !currentVideoId || !db) return;
-        
+        if (!player || isUpdatingFromFirebase || !currentVideoId) return;
         const statusRef = doc(db, "shared_media_status", "current");
         let stateString = "paused";
         if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
@@ -160,6 +136,157 @@
         } catch (e) { console.error(e); }
     }
 
-    // 定期同期用ループ（4秒ごと）
+    // 定期同期用ループ
     setInterval(async () => {
-        if (db && player && player.getPlayerState && player.getPlayerState() === YT.
+        if (player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase && currentVideoId) {
+            const statusRef = doc(db, "shared_media_status", "current");
+            await setDoc(statusRef, {
+                type: 'youtube',
+                videoId: currentVideoId,
+                state: "playing",
+                currentTime: player.getCurrentTime(),
+                updatedBy: myId,
+                timestamp: Date.now()
+            }, { merge: true });
+        }
+    }, 4000);
+
+    // 🌟 ライブ・ショート等、あらゆるYouTube URLに対応した強化版動画ID抽出ロジック
+    function getYouTubeId(url) {
+        const regExp = /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/|live\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[1].length === 11) ? match[1] : null;
+    }
+
+    // メディア共有ボタンのクリックイベント
+    document.getElementById('media-share-btn').onclick = async () => {
+        const url = document.getElementById('media-url-input').value.trim();
+        if (!url) return;
+
+        if (url.includes('spotify.com')) {
+            const embedUrl = url.replace('open.spotify.com/', 'open.spotify.com/embed/');
+            const statusRef = doc(db, "shared_media_status", "current");
+            await setDoc(statusRef, { type: 'spotify', url: embedUrl, updatedBy: myId, timestamp: Date.now() });
+        } else {
+            const videoId = getYouTubeId(url);
+            if (videoId) {
+                currentVideoId = videoId;
+                const statusRef = doc(db, "shared_media_status", "current");
+                await setDoc(statusRef, {
+                    type: 'youtube',
+                    videoId: videoId,
+                    state: "playing",
+                    currentTime: 0,
+                    updatedBy: myId,
+                    timestamp: Date.now()
+                });
+                if (player && player.loadVideoById) {
+                    player.loadVideoById({ videoId: videoId, startSeconds: 0 });
+                }
+            } else {
+                alert("正しいYouTubeのURLを入力してください");
+            }
+        }
+        document.getElementById('media-url-input').value = '';
+    };
+
+    // Firebaseからのリアルタイムデータ監視
+    onSnapshot(doc(db, "shared_media_status", "current"), (snapshot) => {
+        if (!snapshot.exists()) return;
+        const data = snapshot.data();
+        if (data.updatedBy === myId) return;
+
+        isUpdatingFromFirebase = true;
+
+        if (data.type === 'spotify') {
+            switchMediaTab('spotify');
+            document.getElementById('spotify-player').src = data.url;
+            isUpdatingFromFirebase = false;
+            return;
+        }
+
+        switchMediaTab('youtube');
+        if (data.videoId && data.videoId !== currentVideoId) {
+            currentVideoId = data.videoId;
+            if (player && player.loadVideoById) {
+                player.loadVideoById({ videoId: currentVideoId, startSeconds: data.currentTime || 0 });
+            }
+        }
+
+        if (player && player.getPlayerState && player.loadVideoById) {
+            if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
+            if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
+            const localTime = player.getCurrentTime();
+            if (data.currentTime && Math.abs(localTime - data.currentTime) > 2.0) player.seekTo(data.currentTime, true);
+        }
+
+        setTimeout(() => { isUpdatingFromFirebase = false; }, 600);
+    });
+
+    function switchMediaTab(type) {
+        const ytEl = document.getElementById('youtube-player');
+        const spEl = document.getElementById('spotify-player');
+        document.getElementById('tab-youtube').classList.toggle('active', type === 'youtube');
+        document.getElementById('tab-spotify').classList.toggle('active', type === 'spotify');
+        
+        if (type === 'youtube') {
+            ytEl.style.display = 'block';
+            spEl.style.display = 'none';
+        } else {
+            ytEl.style.display = 'none';
+            spEl.style.display = 'block';
+            if (player && player.pauseVideo) player.pauseVideo();
+        }
+    }
+
+    document.getElementById('tab-youtube').onclick = () => switchMediaTab('youtube');
+    document.getElementById('tab-spotify').onclick = () => switchMediaTab('spotify');
+
+    document.getElementById('media-toggle-btn').onclick = () => {
+        const c = document.getElementById('media-container');
+        c.classList.toggle('minimized');
+        document.getElementById('media-toggle-btn').textContent = c.classList.contains('minimized') ? "🔲" : "➖";
+        scrollToBottom();
+    };
+
+    // チャット送信
+    document.getElementById('send-btn').onclick = async () => {
+        const input = document.getElementById('message-input');
+        if (!input.value.trim()) return;
+        try {
+            await addDoc(collection(db, "chat_messages"), { text: input.value, senderId: myId, createdAt: serverTimestamp() });
+            input.value = '';
+        } catch (e) { console.error("送信エラー:", e); }
+    };
+
+    document.getElementById('message-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') document.getElementById('send-btn').click();
+    });
+
+    // チャット表示・自動スクロール
+    onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
+        container.innerHTML = '';
+        snap.forEach(d => {
+            const data = d.data();
+            const div = document.createElement('div');
+            div.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
+            
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            msgDiv.textContent = data.text;
+
+            if (data.image) {
+                const img = document.createElement('img');
+                img.src = data.image;
+                img.onload = scrollToBottom;
+                msgDiv.appendChild(img);
+            }
+
+            div.appendChild(msgDiv);
+            container.appendChild(div);
+        });
+        scrollToBottom();
+    });
+</script>
+</body>
+</html>
