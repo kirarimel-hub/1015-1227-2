@@ -102,7 +102,7 @@
             font-size: 0.95rem;
             line-height: 1.4;
             word-break: break-all;
-            white-space: pre-wrap; /* 改行を有効にする設定 */
+            white-space: pre-wrap;
             cursor: pointer;
             position: relative;
         }
@@ -131,11 +131,63 @@
             color: #007bff;
         }
         
-        /* リアクションスタンプの表示エリア */
         .reactions-display {
             display: flex;
             gap: 2px;
             background: white;
             padding: 2px 6px;
             border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            font-size: 0.8rem;
+            position: absolute;
+            bottom: -10px;
+            right: 10px;
+            z-index: 2;
+        }
+        .reaction-badge {
+            user-select: none;
+        }
+
+        .reaction-picker {
+            display: none;
+            gap: 8px;
+            background: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            position: absolute;
+            top: -40px;
+            z-index: 10;
+        }
+        .reaction-picker span {
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .reaction-picker span:hover {
+            transform: scale(1.3);
+        }
+
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.75rem;
+            margin-top: 12px;
+            padding: 2px 5px;
+        }
+        .delete-btn:hover {
+            color: #dc3545;
+            text-decoration: underline;
+        }
+        #input-container {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #e4e6eb;
+            background: #fff;
+            align-items: flex-end;
+            gap: 8px;
+        }
+        #image-label {
+            background
