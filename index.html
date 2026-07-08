@@ -117,7 +117,8 @@
                 height: '100%',
                 width: '100%',
                 videoId: currentVideoId, 
-                playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+                // 🌟 ここを自動再生（autoplay: 1）＆ミュート（mute: 1）に変更しました
+                playerVars: { 'autoplay': 1, 'mute': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 },
                 events: { 'onStateChange': onPlayerStateChange }
             });
         } catch (e) { console.error("YouTubeプレイヤー作成エラー:", e); }
@@ -170,7 +171,6 @@
         const url = document.getElementById('media-url-input').value.trim();
         if (!url) return;
 
-        // Spotify URLの判定を実用的な形に修正
         if (url.includes('spotify.com')) {
             const embedUrl = url.replace('open.spotify.com/', 'open.spotify.com/embed/');
             if (db) {
@@ -230,101 +230,4 @@
             }
 
             if (player && player.getPlayerState) {
-                if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) {
-                    player.pauseVideo();
-                }
-                if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                    player.playVideo();
-                }
-                
-                const localTime = player.getCurrentTime();
-                if (data.currentTime && Math.abs(localTime - data.currentTime) > 2.5) {
-                    player.seekTo(data.currentTime, true);
-                }
-            }
-
-            setTimeout(() => { isUpdatingFromFirebase = false; }, 1200);
-        });
-    }
-
-    // メディアタブ切り替え
-    function switchMediaTab(type) {
-        const ytEl = document.getElementById('youtube-player');
-        const spEl = document.getElementById('spotify-player');
-        document.getElementById('tab-youtube').classList.toggle('active', type === 'youtube');
-        document.getElementById('tab-spotify').classList.toggle('active', type === 'spotify');
-        
-        if (type === 'youtube') {
-            ytEl.style.display = 'block';
-            spEl.style.display = 'none';
-        } else {
-            ytEl.style.display = 'none';
-            spEl.style.display = 'block';
-            if (player && player.pauseVideo) player.pauseVideo();
-        }
-    }
-
-    document.getElementById('tab-youtube').onclick = () => switchMediaTab('youtube');
-    document.getElementById('tab-spotify').onclick = () => switchMediaTab('spotify');
-
-    document.getElementById('media-toggle-btn').onclick = () => {
-        const c = document.getElementById('media-container');
-        c.classList.toggle('minimized');
-        document.getElementById('media-toggle-btn').textContent = c.classList.contains('minimized') ? "🔲" : "➖";
-        scrollToBottom();
-    };
-
-    // チャット送信
-    document.getElementById('send-btn').onclick = async () => {
-        const input = document.getElementById('message-input');
-        if (!input.value.trim() || !db) return;
-        try {
-            await addDoc(collection(db, "chat_messages"), { text: input.value, senderId: myId, createdAt: serverTimestamp() });
-            input.value = '';
-        } catch (e) { console.error("送信エラー:", e); }
-    };
-
-    document.getElementById('message-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') document.getElementById('send-btn').click();
-    });
-
-    // 全削除ボタンの処理を追加
-    document.getElementById('clear-all-btn').onclick = async () => {
-        if (!db || !confirm("チャット履歴をすべて削除しますか？")) return;
-        try {
-            const querySnapshot = await getDocs(collection(db, "chat_messages"));
-            querySnapshot.forEach(async (doc) => {
-                await deleteDoc(doc.ref);
-            });
-        } catch (e) { console.error("削除エラー:", e); }
-    };
-
-    // チャット表示・自動スクロール
-    if (db) {
-        onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
-            container.innerHTML = '';
-            snap.forEach(d => {
-                const data = d.data();
-                const div = document.createElement('div');
-                div.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
-                
-                const msgDiv = document.createElement('div');
-                msgDiv.className = 'message';
-                msgDiv.textContent = data.text;
-
-                if (data.image) {
-                    const img = document.createElement('img');
-                    img.src = data.image;
-                    img.onload = scrollToBottom;
-                    msgDiv.appendChild(img);
-                }
-
-                div.appendChild(msgDiv);
-                container.appendChild(div);
-            });
-            scrollToBottom();
-        });
-    }
-</script>
-</body>
-</html>
+                if (data.state === "paused" && player.getPlayerState() !== YT
