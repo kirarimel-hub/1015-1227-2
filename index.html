@@ -39,7 +39,6 @@
         #message-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
         #send-btn { background: #007bff; color: white; border: none; padding: 0 20px; border-radius: 20px; cursor: pointer; }
     </style>
-    <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
 
@@ -49,18 +48,19 @@
         <button id="clear-all-btn" style="background:#dc3545; color:white; border:none; border-radius:4px; padding: 4px 8px; cursor:pointer;">全削除</button>
     </div>
 
+    <!-- メディア共有セクション -->
     <div id="media-section">
         <div id="media-input-wrapper">
             <input type="text" id="media-url-input" placeholder="YouTubeの動画URLを貼り付け">
-            <button id="media-share-btn" onclick="shareMedia()">動画を流す</button>
+            <button id="media-share-btn">動画を流す</button>
         </div>
         <div id="media-container">
             <div id="media-menu">
                 <div class="media-tabs">
-                    <button class="media-tab-btn active" id="tab-youtube" onclick="switchMediaTab('youtube')">YouTube (同期中)</button>
-                    <button class="media-tab-btn" id="tab-spotify" onclick="switchMediaTab('spotify')">Spotify</button>
+                    <button class="media-tab-btn active" id="tab-youtube">YouTube (同期中)</button>
+                    <button class="media-tab-btn" id="tab-spotify">Spotify</button>
                 </div>
-                <button id="media-toggle-btn" style="background:none; border:none; color:white; cursor:pointer; font-size:1rem;" onclick="toggleMedia()">➖</button>
+                <button id="media-toggle-btn" style="background:none; border:none; color:white; cursor:pointer; font-size:1rem;">➖</button>
             </div>
             <div id="media-screen">
                 <div id="youtube-player"></div>
@@ -76,6 +76,9 @@
     </div>
 </div>
 
+<!-- 🌟 YouTube API をここに移動して読み込みエラーを完全に防止 -->
+<script src="https://www.youtube.com/iframe_api"></script>
+
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
@@ -84,4 +87,209 @@
         apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
         authDomain: "project-2987921418155591586.firebaseapp.com",
         projectId: "project-2987921418155591586",
-        storageBucket
+        storageBucket: "project-2987921418155591586.firebasestorage.app",
+        messagingSenderId: "34152717352",
+        appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const myId = Math.random().toString(36).substring(2, 9);
+
+    let player = null; 
+    let isUpdatingFromFirebase = false; 
+    let currentVideoId = "";
+
+    const container = document.getElementById('messages');
+
+    function scrollToBottom() {
+        setTimeout(() => {
+            container.scrollTop = container.scrollHeight;
+        }, 50);
+    }
+
+    // YouTube APIの初期化
+    window.onYouTubeIframeAPIReady = function() {
+        player = new YT.Player('youtube-player', {
+            height: '100%',
+            width: '100%',
+            videoId: '', 
+            playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+            events: { 'onStateChange': onPlayerStateChange }
+        });
+    };
+
+    // プレイヤーの操作イベント検知
+    async function onPlayerStateChange(event) {
+        if (!player || isUpdatingFromFirebase || !currentVideoId) return;
+        const statusRef = doc(db, "shared_media_status", "current");
+        let stateString = "paused";
+        if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
+        
+        try {
+            await setDoc(statusRef, {
+                type: 'youtube',
+                videoId: currentVideoId,
+                state: stateString,
+                currentTime: player.getCurrentTime(),
+                updatedBy: myId,
+                timestamp: Date.now()
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    // 定期同期用ループ
+    setInterval(async () => {
+        if (player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase && currentVideoId) {
+            const statusRef = doc(db, "shared_media_status", "current");
+            await setDoc(statusRef, {
+                type: 'youtube',
+                videoId: currentVideoId,
+                state: "playing",
+                currentTime: player.getCurrentTime(),
+                updatedBy: myId,
+                timestamp: Date.now()
+            }, { merge: true });
+        }
+    }, 4000);
+
+    // YouTube URLから動画IDを抜き出す
+    function getYouTubeId(url) {
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    }
+
+    // メディア共有ボタンのクリックイベント
+    document.getElementById('media-share-btn').onclick = async () => {
+        const url = document.getElementById('media-url-input').value.trim();
+        if (!url) return;
+
+        if (url.includes('spotify.com')) {
+            const embedUrl = url.replace('open.spotify.com/', 'open.spotify.com/embed/');
+            const statusRef = doc(db, "shared_media_status", "current");
+            await setDoc(statusRef, { type: 'spotify', url: embedUrl, updatedBy: myId, timestamp: Date.now() });
+        } else {
+            const videoId = getYouTubeId(url);
+            if (videoId) {
+                currentVideoId = videoId;
+                const statusRef = doc(db, "shared_media_status", "current");
+                await setDoc(statusRef, {
+                    type: 'youtube',
+                    videoId: videoId,
+                    state: "playing",
+                    currentTime: 0,
+                    updatedBy: myId,
+                    timestamp: Date.now()
+                });
+                if (player && player.loadVideoById) {
+                    player.loadVideoById({ videoId: videoId, startSeconds: 0 });
+                }
+            } else {
+                alert("正しいYouTubeのURLを入力してください");
+            }
+        }
+        document.getElementById('media-url-input').value = '';
+    };
+
+    // Firebaseからのリアルタイムデータ監視
+    onSnapshot(doc(db, "shared_media_status", "current"), (snapshot) => {
+        if (!snapshot.exists()) return;
+        const data = snapshot.data();
+        if (data.updatedBy === myId) return;
+
+        isUpdatingFromFirebase = true;
+
+        if (data.type === 'spotify') {
+            switchMediaTab('spotify');
+            document.getElementById('spotify-player').src = data.url;
+            isUpdatingFromFirebase = false;
+            return;
+        }
+
+        switchMediaTab('youtube');
+        if (data.videoId && data.videoId !== currentVideoId) {
+            currentVideoId = data.videoId;
+            if (player && player.loadVideoById) {
+                player.loadVideoById({ videoId: currentVideoId, startSeconds: data.currentTime });
+            }
+        }
+
+        if (player && player.getPlayerState && player.loadVideoById) {
+            if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
+            if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
+            const localTime = player.getCurrentTime();
+            if (Math.abs(localTime - data.currentTime) > 2.0) player.seekTo(data.currentTime, true);
+        }
+
+        setTimeout(() => { isUpdatingFromFirebase = false; }, 600);
+    });
+
+    function switchMediaTab(type) {
+        const ytEl = document.getElementById('youtube-player');
+        const spEl = document.getElementById('spotify-player');
+        document.getElementById('tab-youtube').classList.toggle('active', type === 'youtube');
+        document.getElementById('tab-spotify').classList.toggle('active', type === 'spotify');
+        
+        if (type === 'youtube') {
+            ytEl.style.display = 'block';
+            spEl.style.display = 'none';
+        } else {
+            ytEl.style.display = 'none';
+            spEl.style.display = 'block';
+            if (player && player.pauseVideo) player.pauseVideo();
+        }
+    }
+
+    document.getElementById('tab-youtube').onclick = () => switchMediaTab('youtube');
+    document.getElementById('tab-spotify').onclick = () => switchMediaTab('spotify');
+
+    document.getElementById('media-toggle-btn').onclick = () => {
+        const c = document.getElementById('media-container');
+        c.classList.toggle('minimized');
+        document.getElementById('media-toggle-btn').textContent = c.classList.contains('minimized') ? "🔲" : "➖";
+        scrollToBottom();
+    };
+
+    // チャット送信
+    document.getElementById('send-btn').onclick = async () => {
+        const input = document.getElementById('message-input');
+        if (!input.value.trim()) return;
+        try {
+            await addDoc(collection(db, "chat_messages"), { text: input.value, senderId: myId, createdAt: serverTimestamp() });
+            input.value = '';
+        } catch (e) { console.error("送信エラー:", e); }
+    };
+
+    // エンターキーでの送信対応
+    document.getElementById('message-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') document.getElementById('send-btn').click();
+    });
+
+    // チャット表示・自動スクロール
+    onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
+        container.innerHTML = '';
+        snap.forEach(d => {
+            const data = d.data();
+            const div = document.createElement('div');
+            div.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
+            
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            msgDiv.textContent = data.text;
+
+            if (data.image) {
+                const img = document.createElement('img');
+                img.src = data.image;
+                img.onload = scrollToBottom;
+                msgDiv.appendChild(img);
+            }
+
+            div.appendChild(msgDiv);
+            container.appendChild(div);
+        });
+        scrollToBottom();
+    });
+</script>
+</body>
+</html>
