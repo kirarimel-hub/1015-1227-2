@@ -48,7 +48,6 @@
         <button id="clear-all-btn" style="background:#dc3545; color:white; border:none; border-radius:4px; padding: 4px 8px; cursor:pointer;">全削除</button>
     </div>
 
-    <!-- メディア共有セクション -->
     <div id="media-section">
         <div id="media-input-wrapper">
             <input type="text" id="media-url-input" placeholder="YouTubeの動画URLを貼り付け">
@@ -76,7 +75,6 @@
     </div>
 </div>
 
-<!-- YouTube IFrame API -->
 <script src="https://www.youtube.com/iframe_api"></script>
 
 <script type="module">
@@ -98,7 +96,7 @@
 
     let player = null; 
     let isUpdatingFromFirebase = false; 
-    // 🌟 初期読み込みバグを防ぐため、最初からLo-Fi音楽動画(例: JFf3uASYM4E)をセット
+    // 🌟 初期読み込みエラーを防ぐため、最初からLo-Fi音楽動画(JFf3uASYM4E)を設定
     let currentVideoId = "JFf3uASYM4E"; 
 
     const container = document.getElementById('messages');
