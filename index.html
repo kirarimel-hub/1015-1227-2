@@ -80,7 +80,7 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 16px;
         }
         .message-wrapper {
             display: flex;
@@ -102,6 +102,9 @@
             font-size: 0.95rem;
             line-height: 1.4;
             word-break: break-all;
+            white-space: pre-wrap; /* 改行を有効にする設定 */
+            cursor: pointer;
+            position: relative;
         }
         .message img {
             max-width: 100%;
@@ -119,239 +122,20 @@
             color: black;
             border-bottom-left-radius: 2px;
         }
-        .delete-btn {
-            background: none;
-            border: none;
-            color: #888;
-            cursor: pointer;
-            font-size: 0.75rem;
-            margin-top: 2px;
-            padding: 2px 5px;
-        }
-        .delete-btn:hover {
-            color: #dc3545;
+        .message-link {
+            color: #ffc107;
             text-decoration: underline;
-        }
-        #input-container {
-            display: flex;
-            padding: 15px;
-            border-top: 1px solid #e4e6eb;
-            background: #fff;
-            align-items: center;
-            gap: 8px;
-        }
-        #image-label {
-            background: #e4e6eb;
-            color: #333;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 1.2rem;
-            user-select: none;
-        }
-        #image-label:hover {
-            background: #ccd0d5;
-        }
-        #image-input {
-            display: none;
-        }
-        #message-input {
-            flex: 1;
-            padding: 10px 15px;
-            border: 1px solid #ccd0d5;
-            border-radius: 20px;
-            outline: none;
-            font-size: 1rem;
-        }
-        #send-btn {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 20px;
-            cursor: pointer;
             font-weight: bold;
         }
-        #send-btn:hover {
-            background: #0056b3;
+        .other-messages .message-link {
+            color: #007bff;
         }
-    </style>
-</head>
-<body>
-
-<div id="chat-container">
-    <div id="header">
-        <span>自動チャットでお答えします</span>
-        <button id="clear-all-btn">全削除</button>
-    </div>
-    
-    <div id="link-container">
-        <a href="https://www.low-ya.com/?srsltid=AfmBOophH0_weC16uhbCxePPBNmVVTnyLOe_MrSiVr9scfgh_4SqSFjP" target="_blank" class="external-link-btn">
-            🏠 LOWYA（ロウヤ）を開く
-        </a>
-    </div>
-
-    <div id="messages"></div>
-    
-    <div id="input-container">
-        <label id="image-label" for="image-input">＋</label>
-        <input type="file" id="image-input" accept="image/*">
         
-        <input type="text" id="message-input" placeholder="メッセージを入力..." autocomplete="off">
-        <button id="send-btn">送信</button>
-    </div>
-</div>
-
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-    // あなたの Firebase プロジェクトのコンフィグを設定済みです
-const firebaseConfig = {
-  apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
-  authDomain: "project-2987921418155591586.firebaseapp.com",
-  projectId: "project-2987921418155591586",
-  storageBucket: "project-2987921418155591586.firebasestorage.app",
-  messagingSenderId: "34152717352",
-  appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
-};
-
-    // Firebaseの初期化
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-
-    // 匿名ユーザー用の簡易的なランダムIDを生成（セッション中のみ維持）
-    const myId = Math.random().toString(36).substring(2, 9);
-
-    const messagesContainer = document.getElementById('messages');
-    const messageInput = document.getElementById('message-input');
-    const imageInput = document.getElementById('image-input');
-    const sendBtn = document.getElementById('send-btn');
-    const clearAllBtn = document.getElementById('clear-all-btn');
-
-    // メッセージと画像の送信
-    async function sendMessage() {
-        const text = messageInput.value.trim();
-        const file = imageInput.files[0];
-        
-        // テキストも画像もない場合は何もしない
-        if (text === '' && !file) return;
-
-        let imageDataUrl = "";
-
-        // 画像がある場合はBase64の文字データに変換する
-        if (file) {
-            imageDataUrl = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(file);
-            });
-        }
-
-        // 入力欄を先に空にする（送信ボタン連打対策）
-        messageInput.value = '';
-        imageInput.value = '';
-
-        try {
-            await addDoc(collection(db, "chat_messages"), {
-                senderId: myId,
-                text: text,
-                image: imageDataUrl, // 画像データ（ない場合は空）
-                createdAt: serverTimestamp()
-            });
-        } catch (error) {
-            console.error("メッセージの送信に失敗しました: ", error);
-            alert("送信に失敗しました。");
-        }
-    }
-
-    sendBtn.addEventListener('click', sendMessage);
-    messageInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
-    });
-
-    // メッセージを個別に削除する関数（グローバルに公開）
-    window.deleteMessage = async function(messageDocId) {
-        if (!confirm("このメッセージを削除しますか？")) return;
-        try {
-            await deleteDoc(doc(db, "chat_messages", messageDocId));
-        } catch (error) {
-            console.error("削除に失敗しました: ", error);
-            alert("削除に失敗しました。");
-        }
-    }
-
-    // チャット全体を一括削除する機能
-    clearAllBtn.addEventListener('click', async () => {
-        if (!confirm("本当にすべてのチャット履歴を削除しますか？戻せなくなります。")) return;
-        try {
-            const querySnapshot = await getDocs(collection(db, "chat_messages"));
-            for (const document of querySnapshot.docs) {
-                await deleteDoc(doc(db, "chat_messages", document.id));
-            }
-        } catch (error) {
-            console.error("一括削除に失敗しました: ", error);
-            alert("削除に失敗しました。");
-        }
-    });
-
-    // メッセージのリアルタイム受信
-    const q = query(collection(db, "chat_messages"), orderBy("createdAt", "asc"));
-    onSnapshot(q, (snapshot) => {
-        messagesContainer.innerHTML = '';
-        snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            const messageId = docSnap.id;
-            
-            // 外側の包み
-            const wrapper = document.createElement('div');
-            wrapper.classList.add('message-wrapper');
-            
-            // 吹き出し部分
-            const messageElement = document.createElement('div');
-            messageElement.classList.add('message');
-            
-            // テキストがあれば表示
-            if (data.text) {
-                const textSpan = document.createElement('span');
-                textSpan.textContent = data.text;
-                messageElement.appendChild(textSpan);
-            }
-            
-            // 画像があれば表示
-            if (data.image) {
-                const img = document.createElement('img');
-                img.src = data.image;
-                messageElement.appendChild(img);
-            }
-            
-            // 自分が送ったか他人が送ったかでスタイル変更
-            if (data.senderId === myId) {
-                wrapper.classList.add('my-messages');
-            } else {
-                wrapper.classList.add('other-messages');
-            }
-            
-            wrapper.appendChild(messageElement);
-
-            // 削除ボタンの追加
-            const deleteBtn = document.createElement('button');
-            deleteBtn.classList.add('delete-btn');
-            deleteBtn.textContent = '削除';
-            deleteBtn.setAttribute('onclick', `deleteMessage('${messageId}')`);
-            wrapper.appendChild(deleteBtn);
-            
-            messagesContainer.appendChild(wrapper);
-        });
-        // 常に最新のメッセージ（一番下）にスクロール
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    });
-</script>
-
-</body>
-</html>
+        /* リアクションスタンプの表示エリア */
+        .reactions-display {
+            display: flex;
+            gap: 2px;
+            background: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1
