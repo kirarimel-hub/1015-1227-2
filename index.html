@@ -190,4 +190,296 @@
             gap: 8px;
         }
         #image-label {
-            background
+            background: #e4e6eb;
+            color: #333;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1.2rem;
+            user-select: none;
+            margin-bottom: 2px;
+        }
+        #image-label:hover {
+            background: #ccd0d5;
+        }
+        #image-input {
+            display: none;
+        }
+        #message-input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid #ccd0d5;
+            border-radius: 20px;
+            outline: none;
+            font-size: 1rem;
+            resize: none;
+            height: 40px;
+            max-height: 100px;
+            font-family: inherit;
+            line-height: 1.2;
+        }
+        #send-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            height: 40px;
+        }
+        #send-btn:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+<div id="chat-container">
+    <div id="header">
+        <span>自動チャットでお答えします</span>
+        <button id="clear-all-btn">全削除</button>
+    </div>
+    
+    <div id="link-container">
+        <a href="https://www.low-ya.com/?srsltid=AfmBOophH0_weC16uhbCxePPBNmVVTnyLOe_MrSiVr9scfgh_4SqSFjP" target="_blank" class="external-link-btn">
+            🏠 LOWYA（ロウヤ）を開く
+        </a>
+    </div>
+
+    <div id="messages"></div>
+    
+    <div id="input-container">
+        <label id="image-label" for="image-input">＋</label>
+        <input type="file" id="image-input" accept="image/*">
+        
+        <textarea id="message-input" placeholder="メッセージを入力..." autocomplete="off"></textarea>
+        <button id="send-btn">送信</button>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, deleteDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
+        authDomain: "project-2987921418155591586.firebaseapp.com",
+        projectId: "project-2987921418155591586",
+        storageBucket: "project-2987921418155591586.firebasestorage.app",
+        messagingSenderId: "34152717352",
+        appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const myId = Math.random().toString(36).substring(2, 9);
+
+    const messagesContainer = document.getElementById('messages');
+    const messageInput = document.getElementById('message-input');
+    const imageInput = document.getElementById('image-input');
+    const sendBtn = document.getElementById('send-btn');
+    const clearAllBtn = document.getElementById('clear-all-btn');
+
+    messageInput.addEventListener('input', () => {
+        messageInput.style.height = '40px';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
+    });
+
+    function linkify(text) {
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        return text.replace(urlRegex, (url) => {
+            return `<a href="${url}" target="_blank" class="message-link">${url}</a>`;
+        });
+    }
+
+    async function sendMessage() {
+        const text = messageInput.value.trim();
+        const file = imageInput.files[0];
+        
+        if (text === '' && !file) return;
+
+        let imageDataUrl = "";
+        if (file) {
+            imageDataUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        messageInput.value = '';
+        messageInput.style.height = '40px';
+        imageInput.value = '';
+
+        try {
+            await addDoc(collection(db, "chat_messages"), {
+                senderId: myId,
+                text: text,
+                image: imageDataUrl,
+                reactions: {},
+                createdAt: serverTimestamp()
+            });
+        } catch (error) {
+            console.error("送信エラー: ", error);
+        }
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+
+    window.toggleReaction = async function(messageId, emoji) {
+        const messageRef = doc(db, "chat_messages", messageId);
+        try {
+            const picker = document.getElementById(`picker-${messageId}`);
+            if (picker) picker.style.display = 'none';
+
+            const snapshot = document.getElementById(messageId);
+            let currentReactions = JSON.parse(snapshot.getAttribute('data-reactions') || '{}');
+            
+            if (currentReactions[emoji]) {
+                delete currentReactions[emoji];
+            } else {
+                currentReactions[emoji] = true;
+            }
+
+            await updateDoc(messageRef, {
+                reactions: currentReactions
+            });
+        } catch (error) {
+            console.error("スタンプエラー: ", error);
+        }
+    };
+
+    window.showPicker = function(e, messageId) {
+        e.stopPropagation();
+        const picker = document.getElementById(`picker-${messageId}`);
+        if (picker.style.display === 'flex') {
+            picker.style.display = 'none';
+        } else {
+            document.querySelectorAll('.reaction-picker').forEach(p => p.style.display = 'none');
+            picker.style.display = 'flex';
+        }
+    };
+
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.reaction-picker').forEach(p => p.style.display = 'none');
+    });
+
+    window.deleteMessage = async function(messageDocId) {
+        if (!confirm("このメッセージを削除しますか？")) return;
+        try {
+            await deleteDoc(doc(db, "chat_messages", messageDocId));
+        } catch (error) {
+            alert("削除に失敗しました。");
+        }
+    }
+
+    async function executeClearAll() {
+        try {
+            const querySnapshot = await getDocs(collection(db, "chat_messages"));
+            for (const document of querySnapshot.docs) {
+                await deleteDoc(doc(db, "chat_messages", document.id));
+            }
+            console.log("21:00の自動全削除を実行しました。");
+        } catch (error) {
+            console.error("自動全削除エラー: ", error);
+        }
+    }
+
+    clearAllBtn.addEventListener('click', async () => {
+        if (!confirm("本当にすべてのチャット履歴を削除しますか？戻せなくなります。")) return;
+        await executeClearAll();
+    });
+
+    function checkAutoDeleteTime() {
+        const now = new Date();
+        if (now.getHours() === 21 && now.getMinutes() === 0) {
+            if (!localStorage.getItem('lastAutoDeleteDay') || localStorage.getItem('lastAutoDeleteDay') != now.getDate()) {
+                localStorage.setItem('lastAutoDeleteDay', now.getDate());
+                executeClearAll();
+            }
+        }
+    }
+    setInterval(checkAutoDeleteTime, 30000);
+    checkAutoDeleteTime();
+
+    const q = query(collection(db, "chat_messages"), orderBy("createdAt", "asc"));
+    onSnapshot(q, (snapshot) => {
+        messagesContainer.innerHTML = '';
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const messageId = docSnap.id;
+            const reactions = data.reactions || {};
+            
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('message-wrapper');
+            wrapper.id = messageId;
+            wrapper.setAttribute('data-reactions', JSON.stringify(reactions));
+            
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.setAttribute('onclick', `showPicker(event, '${messageId}')`);
+            
+            if (data.text) {
+                const textSpan = document.createElement('span');
+                textSpan.innerHTML = linkify(data.text);
+                messageElement.appendChild(textSpan);
+            }
+            
+            if (data.image) {
+                const img = document.createElement('img');
+                img.src = data.image;
+                messageElement.appendChild(img);
+            }
+
+            const picker = document.createElement('div');
+            picker.classList.add('reaction-picker');
+            picker.id = `picker-${messageId}`;
+            ['❤️', '😂', '😮', '😢', '👍'].forEach(emoji => {
+                const span = document.createElement('span');
+                span.textContent = emoji;
+                span.setAttribute('onclick', `toggleReaction('${messageId}', '${emoji}')`);
+                picker.appendChild(span);
+            });
+            wrapper.appendChild(picker);
+
+            const reactionKeys = Object.keys(reactions);
+            if (reactionKeys.length > 0) {
+                const displayArea = document.createElement('div');
+                displayArea.classList.add('reactions-display');
+                reactionKeys.forEach(emoji => {
+                    const badge = document.createElement('span');
+                    badge.classList.add('reaction-badge');
+                    badge.textContent = emoji;
+                    displayArea.appendChild(badge);
+                });
+                messageElement.appendChild(displayArea);
+            }
+            
+            if (data.senderId === myId) {
+                wrapper.classList.add('my-messages');
+            } else {
+                wrapper.classList.add('other-messages');
+            }
+            
+            wrapper.appendChild(messageElement);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.classList.add('delete-btn');
+            deleteBtn.textContent = '削除';
+            deleteBtn.setAttribute('onclick', `deleteMessage('${messageId}')`);
+            wrapper.appendChild(deleteBtn);
+            
+            messagesContainer.appendChild(wrapper);
+        });
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    });
+</script>
+
+</body>
+</html>
