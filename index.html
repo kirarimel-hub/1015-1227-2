@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LOWYA（ロウヤ）- 同期シアター</title>
+    <title>LOWYA（ロウヤ）</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
@@ -44,7 +44,7 @@
 
 <div id="chat-container">
     <div id="header">
-        <span>LOWYA シアターチャット 🎬</span>
+        <span>自動チャットがお答えします</span>
         <button id="clear-all-btn" style="background:#dc3545; color:white; border:none; border-radius:4px; padding: 4px 8px; cursor:pointer;">全削除</button>
     </div>
 
@@ -96,8 +96,7 @@
 
     let player = null; 
     let isUpdatingFromFirebase = false; 
-    // 🌟 初期読み込みエラーを防ぐため、最初からLo-Fi音楽動画(JFf3uASYM4E)を設定
-    let currentVideoId = "JFf3uASYM4E"; 
+    let currentVideoId = "JFf3uASYM4E"; // 初期Lo-Fi動画
 
     const container = document.getElementById('messages');
 
@@ -120,7 +119,9 @@
 
     // プレイヤーの操作イベント検知
     async function onPlayerStateChange(event) {
+        // 🌟 Firebaseからの更新中、またはプレイヤー準備中の場合はFirebaseへの送信をブロック（無限ループ防止）
         if (!player || isUpdatingFromFirebase || !currentVideoId) return;
+        
         const statusRef = doc(db, "shared_media_status", "current");
         let stateString = "paused";
         if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
@@ -137,7 +138,7 @@
         } catch (e) { console.error(e); }
     }
 
-    // 定期同期用ループ
+    // 定期同期用ループ（再生中のみ、4秒ごとに位置をFirebaseへマージ）
     setInterval(async () => {
         if (player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase && currentVideoId) {
             const statusRef = doc(db, "shared_media_status", "current");
@@ -152,11 +153,11 @@
         }
     }, 4000);
 
-    // YouTube URLから動画IDを確実に抜き出す
+    // あらゆる形式のYouTube URLに対応した動画ID抽出
     function getYouTubeId(url) {
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        const regExp = /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/|live\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
         const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
+        return (match && match[1].length === 11) ? match[1] : null;
     }
 
     // メディア共有ボタンのクリックイベント
@@ -181,9 +182,12 @@
                     updatedBy: myId,
                     timestamp: Date.now()
                 });
+                
+                isUpdatingFromFirebase = true;
                 if (player && player.loadVideoById) {
                     player.loadVideoById({ videoId: videoId, startSeconds: 0 });
                 }
+                setTimeout(() => { isUpdatingFromFirebase = false; }, 1000);
             } else {
                 alert("正しいYouTubeのURLを入力してください");
             }
@@ -195,9 +199,9 @@
     onSnapshot(doc(db, "shared_media_status", "current"), (snapshot) => {
         if (!snapshot.exists()) return;
         const data = snapshot.data();
-        if (data.updatedBy === myId) return;
+        if (data.updatedBy === myId) return; // 自分が原因の変更なら処理しない
 
-        isUpdatingFromFirebase = true;
+        isUpdatingFromFirebase = true; // 🌟 外部からの同期処理が始まったらフラグを立ててループを完全遮断
 
         if (data.type === 'spotify') {
             switchMediaTab('spotify');
@@ -207,6 +211,8 @@
         }
 
         switchMediaTab('youtube');
+        
+        // 動画IDが違う場合のみ動画を読み直す
         if (data.videoId && data.videoId !== currentVideoId) {
             currentVideoId = data.videoId;
             if (player && player.loadVideoById) {
@@ -214,14 +220,24 @@
             }
         }
 
-        if (player && player.getPlayerState && player.loadVideoById) {
-            if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
-            if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
+        // 再生・一時停止・時間の同期
+        if (player && player.getPlayerState) {
+            if (data.state === "paused" && player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                player.pauseVideo();
+            }
+            if (data.state === "playing" && player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                player.playVideo();
+            }
+            
             const localTime = player.getCurrentTime();
-            if (data.currentTime && Math.abs(localTime - data.currentTime) > 2.0) player.seekTo(data.currentTime, true);
+            // 🌟 誤差が2.5秒以上ある時だけシーク（細かすぎる巻き戻りループを防止）
+            if (data.currentTime && Math.abs(localTime - data.currentTime) > 2.5) {
+                player.seekTo(data.currentTime, true);
+            }
         }
 
-        setTimeout(() => { isUpdatingFromFirebase = false; }, 600);
+        // 🌟 同期処理が完全に落ち着くまで少し待ってからフラグを解除
+        setTimeout(() => { isUpdatingFromFirebase = false; }, 1200);
     });
 
     function switchMediaTab(type) {
