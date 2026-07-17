@@ -39,7 +39,7 @@
         .message { padding: 10px 14px; border-radius: 18px; background: #e4e6eb; font-size: 0.9rem; word-break: break-all; white-space: pre-wrap; cursor: pointer; transition: transform 0.1s; position: relative; user-select: none; }
         .message:active { transform: scale(0.98); }
         .my-messages .message { background: #007bff; color: white; }
-        .message img { max-width: 100%; border-radius: 8px; display: block; margin-top: 5px; }
+        .message img { max-width: 100%; max-height: 200px; border-radius: 12px; display: block; margin: 2px 0; }
         
         /* リアクション表示バッジ */
         .reaction-badge-container { display: flex; gap: 3px; position: absolute; bottom: -12px; background: white; padding: 2px 6px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.15); border: 1px solid #eee; font-size: 0.75rem; cursor: pointer; z-index: 2; pointer-events: auto; color: #333; }
@@ -56,9 +56,15 @@
         .msg-delete-link { font-size: 0.7rem; color: #aaa; text-decoration: none; cursor: pointer; visibility: hidden; margin: 0 4px; padding-bottom: 2px; }
         .message-wrapper:hover .msg-delete-link { visibility: visible; }
         
-        #input-container { display: flex; padding: 10px; border-top: 1px solid #ddd; gap: 8px; background: white; flex-shrink: 0; }
-        #message-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
-        #send-btn { background: #007bff; color: white; border: none; padding: 0 20px; border-radius: 20px; cursor: pointer; }
+        /* 入力コンテナ */
+        #input-container { display: flex; padding: 10px; border-top: 1px solid #ddd; gap: 8px; background: white; flex-shrink: 0; align-items: center; }
+        #message-input { flex: 1; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 0.95rem; }
+        #send-btn { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        
+        /* 画像追加ボタン */
+        #photo-btn { background: #f0f2f5; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 1.4rem; cursor: pointer; display: flex; justify-content: center; align-items: center; color: #555; transition: background 0.2s; }
+        #photo-btn:hover { background: #e4e6eb; }
+        #file-input { display: none; }
     </style>
 </head>
 <body>
@@ -103,7 +109,11 @@
     </div>
 
     <div id="input-container">
-        <input type="text" id="message-input" placeholder="メッセージまたは画像URLを入力...">
+        <!-- スマホの画像送信ボタン -->
+        <button id="photo-btn" onclick="document.getElementById('file-input').click()">➕</button>
+        <input type="file" id="file-input" accept="image/*">
+        
+        <input type="text" id="message-input" placeholder="メッセージを入力...">
         <button id="send-btn">送信</button>
     </div>
 </div>
@@ -154,36 +164,88 @@
 
     function scrollToBottom() { setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50); }
 
-    // 画像URLかどうか判定
-    function isImageUrl(str) {
-        return str.match(/\.(jpeg|jpg|gif|png|bmp|webp)(\?.*)?$/i);
+    // 画像ファイルを自動圧縮してBase64にする関数（送信速度と容量問題の対策）
+    function compressAndSend(file) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 800; // 長辺最大800pxに圧縮
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+                } else {
+                    if (height > MAX_WIDTH) {
+                        width *= MAX_WIDTH / height;
+                        height = MAX_WIDTH;
+                    }
+                }
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // 画質を適度に落として軽量化(0.7)
+                const base64Data = canvas.toDataURL('image/jpeg', 0.7);
+                sendImageToFirebase(base64Data);
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
     }
 
-    // チャット送信（テキスト または 画像URL）
+    // 画像をFirebaseに送信
+    async function sendImageToFirebase(base64Str) {
+        if (!db) return;
+        try {
+            await addDoc(collection(db, "chat_messages"), {
+                senderId: myId,
+                image: base64Str,
+                createdAt: serverTimestamp(),
+                reactions: {}
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    // ➕ボタンで画像ファイルが選ばれた時
+    document.getElementById('file-input').onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            compressAndSend(file);
+            e.target.value = ''; // 選択をクリア
+        }
+    };
+
+    // テキストメッセージ送信
     document.getElementById('send-btn').onclick = async () => {
         const input = document.getElementById('message-input');
         if (!input.value.trim() || !db) return;
         
-        const text = input.value.trim();
-        const payload = {
-            senderId: myId, 
-            createdAt: serverTimestamp(),
-            reactions: {}
-        };
-        
-        if (isImageUrl(text)) {
-            payload.image = text;
-        } else {
-            payload.text = text;
-        }
-
         try {
-            await addDoc(collection(db, "chat_messages"), payload);
+            await addDoc(collection(db, "chat_messages"), {
+                senderId: myId, 
+                text: input.value.trim(),
+                createdAt: serverTimestamp(),
+                reactions: {}
+            });
             input.value = '';
         } catch (e) { console.error(e); }
     };
 
-    // リアクション・削除処理などのロジックは前回同様
+    // Enterキーでもテキスト送信できるように
+    document.getElementById('message-input').onkeydown = (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('send-btn').click();
+        }
+    };
+
+    // リアクション処理
     window.openReactionMenu = function(e, msgId) {
         e.stopPropagation();
         activeMessageId = msgId;
@@ -278,7 +340,7 @@
         });
     }
 
-    // (以下、前回同様のPlayerStateChange、setInterval、動画操作のロジックはそのまま維持)
+    // (以下、PlayerStateChange、setInterval、動画操作のロジックはそのまま維持)
     window.onPlayerStateChangeCallback = async function(event) {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
         const statusRef = doc(db, "shared_media_v4", "current");
@@ -287,7 +349,6 @@
         try { await setDoc(statusRef, { type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now() }); } catch (e) { }
     };
     
-    // ... (前回コードの末尾にある同期処理などはそのまま継続)
 </script>
 </body>
 </html>
