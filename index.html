@@ -41,29 +41,26 @@
         .my-messages .message { background: #007bff; color: white; }
         .message img { max-width: 100%; max-height: 200px; border-radius: 12px; display: block; margin: 2px 0; }
         
-        /* リアクション表示バッジ */
+        /* リアクション */
         .reaction-badge-container { display: flex; gap: 3px; position: absolute; bottom: -12px; background: white; padding: 2px 6px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.15); border: 1px solid #eee; font-size: 0.75rem; cursor: pointer; z-index: 2; pointer-events: auto; color: #333; }
         .my-messages .reaction-badge-container { right: 10px; }
         .other-messages .reaction-badge-container { left: 10px; }
 
-        /* インスタ風ポップアップメニュー */
+        /* インスタ風ポップアップ */
         .reaction-popup { display: none; position: absolute; background: white; border-radius: 30px; padding: 5px 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); gap: 8px; z-index: 999; animation: popUp 0.15s ease-out; border: 1px solid #ddd; }
         @keyframes popUp { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .reaction-emoji-btn { font-size: 1.3rem; border: none; background: none; cursor: pointer; padding: 0 2px; transition: transform 0.1s; }
         .reaction-emoji-btn:hover { transform: scale(1.25); }
 
-        /* 個別削除リンク */
+        /* 削除リンク */
         .msg-delete-link { font-size: 0.7rem; color: #aaa; text-decoration: none; cursor: pointer; visibility: hidden; margin: 0 4px; padding-bottom: 2px; }
         .message-wrapper:hover .msg-delete-link { visibility: visible; }
         
-        /* 入力コンテナ */
+        /* 入力エリア */
         #input-container { display: flex; padding: 10px; border-top: 1px solid #ddd; gap: 8px; background: white; flex-shrink: 0; align-items: center; }
         #message-input { flex: 1; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 0.95rem; }
         #send-btn { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; }
-        
-        /* 画像追加ボタン */
-        #photo-btn { background: #f0f2f5; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 1.4rem; cursor: pointer; display: flex; justify-content: center; align-items: center; color: #555; transition: background 0.2s; }
-        #photo-btn:hover { background: #e4e6eb; }
+        #photo-btn { background: #f0f2f5; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 1.4rem; cursor: pointer; display: flex; justify-content: center; align-items: center; color: #555; }
         #file-input { display: none; }
     </style>
 </head>
@@ -95,10 +92,8 @@
         </div>
     </div>
 
-    <!-- チャットメッセージエリア -->
     <div id="messages"></div>
 
-    <!-- 浮遊するリアクションメニュー -->
     <div id="global-reaction-popup" class="reaction-popup">
         <button class="reaction-emoji-btn" data-emoji="👍">👍</button>
         <button class="reaction-emoji-btn" data-emoji="❤️">❤️</button>
@@ -109,10 +104,8 @@
     </div>
 
     <div id="input-container">
-        <!-- スマホの画像送信ボタン -->
         <button id="photo-btn" onclick="document.getElementById('file-input').click()">➕</button>
         <input type="file" id="file-input" accept="image/*">
-        
         <input type="text" id="message-input" placeholder="メッセージを入力...">
         <button id="send-btn">送信</button>
     </div>
@@ -158,105 +151,64 @@
 
     const myId = Math.random().toString(36).substring(2, 9);
     let activeMessageId = null;
-
     const container = document.getElementById('messages');
     const popup = document.getElementById('global-reaction-popup');
 
     function scrollToBottom() { setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50); }
 
-    // 画像ファイルを自動圧縮してBase64にする関数（送信速度と容量問題の対策）
+    // 全削除機能
+    document.getElementById('clear-all-btn').onclick = async () => {
+        if (!db || !confirm("本当にすべてのチャット履歴を削除しますか？")) return;
+        try {
+            const snap = await getDocs(query(collection(db, "chat_messages")));
+            const deletePromises = [];
+            snap.forEach(d => { deletePromises.push(deleteDoc(doc(db, "chat_messages", d.id))); });
+            await Promise.all(deletePromises);
+        } catch (e) { alert("削除に失敗しました: " + e.message); }
+    };
+
+    // 画像圧縮送信
     function compressAndSend(file) {
         const reader = new FileReader();
         reader.onload = function(event) {
             const img = new Image();
             img.onload = function() {
                 const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 800; // 長辺最大800pxに圧縮
-                let width = img.width;
-                let height = img.height;
-
-                if (width > height) {
-                    if (width > MAX_WIDTH) {
-                        height *= MAX_WIDTH / width;
-                        width = MAX_WIDTH;
-                    }
-                } else {
-                    if (height > MAX_WIDTH) {
-                        width *= MAX_WIDTH / height;
-                        height = MAX_WIDTH;
-                    }
-                }
-                canvas.width = width;
-                canvas.height = height;
+                const MAX_WIDTH = 800;
+                let width = img.width, height = img.height;
+                if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } }
+                else { if (height > MAX_WIDTH) { width *= MAX_WIDTH / height; height = MAX_WIDTH; } }
+                canvas.width = width; canvas.height = height;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
-
-                // 画質を適度に落として軽量化(0.7)
-                const base64Data = canvas.toDataURL('image/jpeg', 0.7);
-                sendImageToFirebase(base64Data);
+                sendImageToFirebase(canvas.toDataURL('image/jpeg', 0.7));
             };
             img.src = event.target.result;
         };
         reader.readAsDataURL(file);
     }
 
-    // 画像をFirebaseに送信
     async function sendImageToFirebase(base64Str) {
         if (!db) return;
-        try {
-            await addDoc(collection(db, "chat_messages"), {
-                senderId: myId,
-                image: base64Str,
-                createdAt: serverTimestamp(),
-                reactions: {}
-            });
-        } catch (e) { console.error(e); }
+        try { await addDoc(collection(db, "chat_messages"), { senderId: myId, image: base64Str, createdAt: serverTimestamp(), reactions: {} }); } catch (e) { console.error(e); }
     }
 
-    // ➕ボタンで画像ファイルが選ばれた時
-    document.getElementById('file-input').onchange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            compressAndSend(file);
-            e.target.value = ''; // 選択をクリア
-        }
-    };
-
-    // テキストメッセージ送信
+    document.getElementById('file-input').onchange = (e) => { if (e.target.files[0]) compressAndSend(e.target.files[0]); e.target.value = ''; };
     document.getElementById('send-btn').onclick = async () => {
         const input = document.getElementById('message-input');
         if (!input.value.trim() || !db) return;
-        
-        try {
-            await addDoc(collection(db, "chat_messages"), {
-                senderId: myId, 
-                text: input.value.trim(),
-                createdAt: serverTimestamp(),
-                reactions: {}
-            });
-            input.value = '';
-        } catch (e) { console.error(e); }
+        try { await addDoc(collection(db, "chat_messages"), { senderId: myId, text: input.value.trim(), createdAt: serverTimestamp(), reactions: {} }); input.value = ''; } catch (e) { console.error(e); }
     };
 
-    // Enterキーでもテキスト送信できるように
-    document.getElementById('message-input').onkeydown = (e) => {
-        if (e.key === 'Enter') {
-            document.getElementById('send-btn').click();
-        }
-    };
+    document.getElementById('message-input').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('send-btn').click(); };
 
-    // リアクション処理
+    // リアクション・描画・動画同期ロジック (略記)
     window.openReactionMenu = function(e, msgId) {
-        e.stopPropagation();
-        activeMessageId = msgId;
+        e.stopPropagation(); activeMessageId = msgId;
         const rect = e.currentTarget.getBoundingClientRect();
         const containerRect = document.getElementById('chat-container').getBoundingClientRect();
-        let topPosition = rect.top - containerRect.top - 45;
-        let leftPosition = rect.left - containerRect.left + (rect.width / 2) - 100;
-        if (leftPosition < 10) leftPosition = 10;
-        if (leftPosition > containerRect.width - 210) leftPosition = containerRect.width - 210;
-        popup.style.top = `${topPosition}px`;
-        popup.style.left = `${leftPosition}px`;
+        popup.style.top = `${rect.top - containerRect.top - 45}px`;
+        popup.style.left = `${Math.min(Math.max(rect.left - containerRect.left + (rect.width/2) - 100, 10), containerRect.width - 210)}px`;
         popup.style.display = 'flex';
     };
 
@@ -264,23 +216,15 @@
 
     document.querySelectorAll('.reaction-emoji-btn').forEach(btn => {
         btn.onclick = async (e) => {
-            e.stopPropagation();
-            if (!activeMessageId || !db) return;
-            const selectedEmoji = btn.textContent;
-            const msgRef = doc(db, "chat_messages", activeMessageId);
+            e.stopPropagation(); if (!activeMessageId || !db) return;
+            const emoji = btn.textContent, msgRef = doc(db, "chat_messages", activeMessageId);
             popup.style.display = 'none';
             try {
                 const snap = await getDocs(query(collection(db, "chat_messages")));
-                let currentReactions = {};
-                snap.forEach(d => { if(d.id === activeMessageId) currentReactions = d.data().reactions || {}; });
-                if (currentReactions[selectedEmoji] && currentReactions[selectedEmoji].includes(myId)) {
-                    currentReactions[selectedEmoji] = currentReactions[selectedEmoji].filter(id => id !== myId);
-                    if (currentReactions[selectedEmoji].length === 0) delete currentReactions[selectedEmoji];
-                } else {
-                    if (!currentReactions[selectedEmoji]) currentReactions[selectedEmoji] = [];
-                    currentReactions[selectedEmoji].push(myId);
-                }
-                await updateDoc(msgRef, { reactions: currentReactions });
+                let reactions = {}; snap.forEach(d => { if(d.id === activeMessageId) reactions = d.data().reactions || {}; });
+                if (reactions[emoji] && reactions[emoji].includes(myId)) { reactions[emoji] = reactions[emoji].filter(id => id !== myId); if (reactions[emoji].length === 0) delete reactions[emoji]; }
+                else { if (!reactions[emoji]) reactions[emoji] = []; reactions[emoji].push(myId); }
+                await updateDoc(msgRef, { reactions });
             } catch (err) { console.error(err); }
         };
     });
@@ -289,66 +233,30 @@
         onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
             container.innerHTML = '';
             snap.forEach(d => {
-                const data = d.data();
-                const msgId = d.id;
-                const reactions = data.reactions || {};
+                const data = d.data(), msgId = d.id, reactions = data.reactions || {};
                 const wrapper = document.createElement('div');
                 wrapper.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
-                const rowDiv = document.createElement('div');
-                rowDiv.className = 'message-row';
-                const msgDiv = document.createElement('div');
-                msgDiv.className = 'message';
-                
-                if (data.image) {
-                    const img = document.createElement('img');
-                    img.src = data.image;
-                    msgDiv.appendChild(img);
-                } else {
-                    msgDiv.textContent = data.text;
-                }
+                const rowDiv = document.createElement('div'); rowDiv.className = 'message-row';
+                const msgDiv = document.createElement('div'); msgDiv.className = 'message';
+                if (data.image) { const img = document.createElement('img'); img.src = data.image; msgDiv.appendChild(img); } else { msgDiv.textContent = data.text; }
                 msgDiv.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`);
-
-                // リアクションバッジ
-                let totalReactionCount = 0;
-                const badgeDiv = document.createElement('div');
-                badgeDiv.className = 'reaction-badge-container';
-                badgeDiv.style.display = 'none';
-                badgeDiv.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`);
-                let badgeText = "";
-                for (const [emoji, users] of Object.entries(reactions)) {
-                    if (users.length > 0) {
-                        badgeText += `${emoji}${users.length} `;
-                        totalReactionCount += users.length;
-                    }
-                }
-                if (totalReactionCount > 0) {
-                    badgeDiv.textContent = badgeText.trim();
-                    badgeDiv.style.display = 'flex';
-                    msgDiv.appendChild(badgeDiv);
-                }
-                rowDiv.appendChild(msgDiv);
                 
-                const delLink = document.createElement('span');
-                delLink.className = 'msg-delete-link';
-                delLink.textContent = '削除';
-                delLink.onclick = async (e) => { e.stopPropagation(); if (confirm("削除しますか？")) await deleteDoc(doc(db, "chat_messages", msgId)); };
-                rowDiv.appendChild(delLink);
-                wrapper.appendChild(rowDiv);
-                container.appendChild(wrapper);
+                let count = 0, badgeText = "";
+                for (const [e, u] of Object.entries(reactions)) { if (u.length > 0) { badgeText += `${e}${u.length} `; count += u.length; } }
+                if (count > 0) { const b = document.createElement('div'); b.className = 'reaction-badge-container'; b.textContent = badgeText.trim(); b.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`); msgDiv.appendChild(b); }
+                
+                rowDiv.appendChild(msgDiv);
+                const del = document.createElement('span'); del.className = 'msg-delete-link'; del.textContent = '削除'; del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(db, "chat_messages", msgId)); };
+                rowDiv.appendChild(del); wrapper.appendChild(rowDiv); container.appendChild(wrapper);
             });
             scrollToBottom();
         });
     }
 
-    // (以下、PlayerStateChange、setInterval、動画操作のロジックはそのまま維持)
     window.onPlayerStateChangeCallback = async function(event) {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
-        const statusRef = doc(db, "shared_media_v4", "current");
-        let stateString = "paused";
-        if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
-        try { await setDoc(statusRef, { type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now() }); } catch (e) { }
+        try { await setDoc(doc(db, "shared_media_v4", "current"), { type: 'youtube', videoId: window.currentVideoId, state: event.data == YT.PlayerState.PLAYING ? "playing" : "paused", currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now() }); } catch (e) {}
     };
-    
 </script>
 </body>
 </html>
