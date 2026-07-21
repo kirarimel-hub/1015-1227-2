@@ -132,7 +132,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
@@ -156,7 +156,7 @@
 
     function scrollToBottom() { setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50); }
 
-    // 🌟 全削除機能（Firebaseのセキュリティエラーを具体的に突き止めるデバッグ機能付き）
+    // --- 全削除機能 ---
     document.getElementById('clear-all-btn').onclick = async () => {
         if (!db || !confirm("本当にすべてのチャット履歴を削除しますか？")) return;
         try {
@@ -169,20 +169,19 @@
                     await deleteDoc(doc(db, "chat_messages", docSnapshot.id));
                     deletedCount++;
                 } catch (e) {
-                    console.error("削除エラー:", e);
                     errorCount++;
                 }
             }
             
             if (errorCount > 0) {
-                alert(`エラー：${errorCount}件の削除に失敗しました。\nFirebaseのセキュリティルール(Rules)で「他人のメッセージの削除」が禁止されている可能性があります。\nFirebase管理画面のRulesを確認してください。`);
+                alert(`エラー：${errorCount}件の削除に失敗しました。Firebaseのセキュリティルールを確認してください。`);
             } else {
                 alert("すべてのチャットを削除しました！");
             }
         } catch (e) { alert("削除処理に失敗しました: " + e.message); }
     };
 
-    // スマホ画像圧縮・送信
+    // --- スマホ画像圧縮・送信 ---
     function compressAndSend(file) {
         const reader = new FileReader();
         reader.onload = function(event) {
@@ -210,7 +209,7 @@
 
     document.getElementById('file-input').onchange = (e) => { if (e.target.files[0]) compressAndSend(e.target.files[0]); e.target.value = ''; };
     
-    // テキスト送信
+    // --- テキスト送信 ---
     document.getElementById('send-btn').onclick = async () => {
         const input = document.getElementById('message-input');
         if (!input.value.trim() || !db) return;
@@ -219,7 +218,7 @@
 
     document.getElementById('message-input').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('send-btn').click(); };
 
-    // リアクションメニュー表示
+    // --- リアクション処理 ---
     window.openReactionMenu = function(e, msgId) {
         e.stopPropagation(); activeMessageId = msgId;
         const rect = e.currentTarget.getBoundingClientRect();
@@ -231,7 +230,6 @@
 
     document.addEventListener('click', () => { popup.style.display = 'none'; });
 
-    // リアクション追加・削除
     document.querySelectorAll('.reaction-emoji-btn').forEach(btn => {
         btn.onclick = async (e) => {
             e.stopPropagation(); if (!activeMessageId || !db) return;
@@ -247,7 +245,7 @@
         };
     });
 
-    // リアルタイムチャット描画
+    // --- チャットリアルタイム描画 ---
     if (db) {
         onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
             container.innerHTML = '';
@@ -266,7 +264,6 @@
                 
                 rowDiv.appendChild(msgDiv);
                 
-                // 🌟 個別削除も維持
                 const del = document.createElement('span'); del.className = 'msg-delete-link'; del.textContent = '削除'; 
                 del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(db, "chat_messages", msgId)); };
                 rowDiv.appendChild(del); wrapper.appendChild(rowDiv); container.appendChild(wrapper);
@@ -275,10 +272,77 @@
         });
     }
 
-    // YouTube プレイヤー同期ロジック
+    // --- YouTube プレイヤー & 同期コントロール ---
+    function extractVideoId(url) {
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    }
+
+    document.getElementById('media-share-btn').onclick = async () => {
+        const urlInput = document.getElementById('media-url-input').value.trim();
+        const videoId = extractVideoId(urlInput);
+        if (!videoId) { alert("有効なYouTubeのURLを入力してください"); return; }
+        window.currentVideoId = videoId;
+        if (window.player && window.player.loadVideoById) {
+            window.player.loadVideoById(videoId);
+        }
+        if (db) {
+            try {
+                await setDoc(doc(db, "shared_media_v4", "current"), {
+                    type: 'youtube', videoId: videoId, state: 'playing', currentTime: 0, updatedBy: myId, timestamp: Date.now()
+                });
+            } catch (e) { console.error(e); }
+        }
+        document.getElementById('media-url-input').value = '';
+    };
+
     window.onPlayerStateChangeCallback = async function(event) {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
-        try { await setDoc(doc(db, "shared_media_v4", "current"), { type: 'youtube', videoId: window.currentVideoId, state: event.data == YT.PlayerState.PLAYING ? "playing" : "paused", currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now() }); } catch (e) {}
+        try {
+            await setDoc(doc(db, "shared_media_v4", "current"), {
+                type: 'youtube', videoId: window.currentVideoId, state: event.data == YT.PlayerState.PLAYING ? "playing" : "paused", currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now()
+            });
+        } catch (e) {}
+    };
+
+    // Firebaseからのメディア同期リスナー
+    if (db) {
+        onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
+            if (!docSnap.exists() || !window.player || typeof window.player.loadVideoById !== 'function') return;
+            const data = docSnap.data();
+            if (data.updatedBy === myId) return; // 自分が操作した分は無視
+            
+            window.isUpdatingFromFirebase = true;
+            if (data.videoId && data.videoId !== window.currentVideoId) {
+                window.currentVideoId = data.videoId;
+                window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime || 0 });
+            } else if (data.currentTime !== undefined) {
+                const diff = Math.abs(window.player.getCurrentTime() - data.currentTime);
+                if (diff > 2) window.player.seekTo(data.currentTime, true);
+                if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                    window.player.playVideo();
+                } else if (data.state === 'paused' && window.player.getPlayerState() === YT.PlayerState.PLAYING) {
+                    window.player.pauseVideo();
+                }
+            }
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1000);
+        });
+    }
+
+    // メディア最小化ボタン
+    let isMinimized = false;
+    document.getElementById('media-toggle-btn').onclick = () => {
+        isMinimized = !isMinimized;
+        const container = document.getElementById('media-container');
+        const btn = document.getElementById('media-toggle-btn');
+        if (isMinimized) {
+            container.classList.add('minimized');
+            btn.textContent = '➕';
+        } else {
+            container.classList.remove('minimized');
+            btn.textContent = '➖';
+        }
     };
 </script>
 </body>
