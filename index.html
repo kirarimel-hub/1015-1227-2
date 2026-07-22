@@ -74,7 +74,7 @@
     <!-- メディア共有セクション -->
     <div id="media-section">
         <div id="media-input-wrapper">
-            <input type="text" id="media-url-input" placeholder="YouTubeの動画URLを貼り付け">
+            <input type="text" id="media-url-input" placeholder="YouTube(動画・ライブ配信アーカイブ)のURLを入力">
             <button id="media-share-btn">動画を流す</button>
         </div>
         <div id="media-container">
@@ -123,7 +123,13 @@
                 height: '100%',
                 width: '100%',
                 videoId: window.currentVideoId, 
-                playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+                playerVars: { 
+                    'autoplay': 1, 
+                    'controls': 1, 
+                    'rel': 0, 
+                    'playsinline': 1,
+                    'enablejsapi': 1 
+                },
                 events: { 
                     'onStateChange': window.onPlayerStateChangeCallback 
                 }
@@ -261,28 +267,30 @@
                 rowDiv.appendChild(msgDiv);
                 
                 const del = document.createElement('span'); del.className = 'msg-delete-link'; del.textContent = '削除'; 
-                del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(db, "chat_messages", msgId)); };
+                del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(docRef, "chat_messages", msgId)); };
                 rowDiv.appendChild(del); wrapper.appendChild(rowDiv); container.appendChild(wrapper);
             });
             scrollToBottom();
         });
     }
 
-    // --- YouTube プレイヤー & リアルタイム同期機能 ---
+    // --- YouTube プレイヤー & リアルタイム同期機能 (ライブアーカイブ対応版) ---
     function extractVideoId(url) {
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        // 通常動画, youtu.be, embed, live, shorts 等すべての形式のURLに対応
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|live\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
         const match = url.match(regExp);
         return (match && match[2].length === 11) ? match[2] : null;
     }
 
-    // 動画を新しく流すボタン
+    // 動画/ライブアーカイブを流すボタン
     document.getElementById('media-share-btn').onclick = async () => {
         const urlInput = document.getElementById('media-url-input').value.trim();
         const videoId = extractVideoId(urlInput);
-        if (!videoId) { alert("有効なYouTubeのURLを入力してください"); return; }
+        if (!videoId) { alert("有効なYouTubeのURLを入力してください（通常動画・ライブアーカイブ対応）"); return; }
+        
         window.currentVideoId = videoId;
         if (window.player && window.player.loadVideoById) {
-            window.player.loadVideoById(videoId);
+            window.player.loadVideoById({ videoId: videoId, startSeconds: 0 });
         }
         if (db) {
             try {
@@ -290,7 +298,7 @@
                 await setDoc(doc(db, "shared_media_v4", "current"), {
                     type: 'youtube', videoId: videoId, state: 'playing', currentTime: 0, updatedBy: myId, timestamp: Date.now()
                 });
-                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1000);
+                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
             } catch (e) { console.error(e); }
         }
         document.getElementById('media-url-input').value = '';
@@ -299,29 +307,32 @@
     // 再生・一時停止の状態が変わったとき
     window.onPlayerStateChangeCallback = async function(event) {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
+        
         let stateString = "paused";
         if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
+        else if (event.data == YT.PlayerState.BUFFERING) return; // 読み込み中の余計な同期を防ぐ
+
         try {
             window.isUpdatingFromFirebase = true;
+            const currentTime = typeof window.player.getCurrentTime === 'function' ? window.player.getCurrentTime() : 0;
             await setDoc(doc(db, "shared_media_v4", "current"), {
-                type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now()
+                type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: currentTime, updatedBy: myId, timestamp: Date.now()
             });
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1000);
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
         } catch (e) {}
     };
 
-    // ★重要：自分が再生している位置（シークなど）を定期的に相手に送信して同期させる仕組み
+    // 再生位置（シーク）の定期的な同期処理
     let lastSentTime = 0;
     setInterval(async () => {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
-        if (typeof window.player.getPlayerState !== 'function') return;
+        if (typeof window.player.getPlayerState !== 'function' || typeof window.player.getCurrentTime !== 'function') return;
         
         try {
             const state = window.player.getPlayerState();
-            // 再生中(PLAYING)のときだけ定期的に現在地を同期
             if (state === YT.PlayerState.PLAYING) {
                 const currentTime = window.player.getCurrentTime();
-                // 5秒以上位置が大きく変わった時、または定期保存
+                // 3秒以上のズレ、または大幅なシークがあった場合に送信
                 if (Math.abs(currentTime - lastSentTime) > 3) {
                     lastSentTime = currentTime;
                     await setDoc(doc(db, "shared_media_v4", "current"), {
@@ -337,21 +348,22 @@
         onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
             if (!docSnap.exists() || !window.player || typeof window.player.loadVideoById !== 'function') return;
             const data = docSnap.data();
-            if (data.updatedBy === myId) return; // 自分が操作した分は無視
+            if (data.updatedBy === myId) return; // 自分が操作した通知はスルー
             
             window.isUpdatingFromFirebase = true;
             
-            // 動画が変わった場合
+            // 動画・ライブアーカイブが切り替わった場合
             if (data.videoId && data.videoId !== window.currentVideoId) {
                 window.currentVideoId = data.videoId;
                 window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime || 0 });
             } else if (data.currentTime !== undefined) {
-                // 再生位置のズレが2秒以上あれば合わせる
-                const currentLocalTime = window.player.getCurrentTime();
-                if (Math.abs(currentLocalTime - data.currentTime) > 2) {
+                const currentLocalTime = typeof window.player.getCurrentTime === 'function' ? window.player.getCurrentTime() : 0;
+                // ライブアーカイブ等のシークズレ対策（3秒以上のズレがあれば追いつかせる）
+                if (Math.abs(currentLocalTime - data.currentTime) > 3) {
                     window.player.seekTo(data.currentTime, true);
                 }
-                // 再生・一時停止の状態を合わせる
+                
+                // 再生・一時停止の同期
                 if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) {
                     window.player.playVideo();
                 } else if (data.state === 'paused' && window.player.getPlayerState() === YT.PlayerState.PLAYING) {
@@ -359,7 +371,7 @@
                 }
             }
             
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1000);
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
         });
     }
 
