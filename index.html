@@ -19,11 +19,9 @@
         #media-container { display: flex; flex-direction: column; transition: all 0.3s; }
         #media-menu { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 5px 10px; }
         .media-tabs { display: flex; gap: 5px; }
-        .media-tab-btn { background: #444; color: #ccc; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; }
-        .media-tab-btn.active { background: #007bff; color: white; }
+        .media-tab-btn { background: #007bff; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; }
         #media-screen { width: 100%; height: 240px; background: #000; position: relative; }
         #youtube-player { width: 100%; height: 100%; border: none; }
-        #spotify-player { width: 100%; height: 100%; border: none; display: none; }
         .minimized #media-screen { height: 0; }
 
         /* チャットエリア */
@@ -74,20 +72,18 @@
     <!-- メディア共有セクション -->
     <div id="media-section">
         <div id="media-input-wrapper">
-            <input type="text" id="media-url-input" placeholder="YouTube(動画・ライブ配信アーカイブ)のURLを入力">
+            <input type="text" id="media-url-input" placeholder="YouTubeのURLを入力">
             <button id="media-share-btn">動画を流す</button>
         </div>
         <div id="media-container">
             <div id="media-menu">
                 <div class="media-tabs">
                     <button class="media-tab-btn active" id="tab-youtube">YouTube (同期中)</button>
-                    <button class="media-tab-btn" id="tab-spotify">Spotify</button>
                 </div>
                 <button id="media-toggle-btn" style="background:none; border:none; color:white; cursor:pointer; font-size:1rem;">➖</button>
             </div>
             <div id="media-screen">
                 <div id="youtube-player"></div>
-                <iframe id="spotify-player" allow="encrypted-media"></iframe>
             </div>
         </div>
     </div>
@@ -266,27 +262,40 @@
                 
                 rowDiv.appendChild(msgDiv);
                 
+                // 個別削除リンク（修正箇所）
                 const del = document.createElement('span'); del.className = 'msg-delete-link'; del.textContent = '削除'; 
-                del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(docRef, "chat_messages", msgId)); };
+                del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(db, "chat_messages", msgId)); };
                 rowDiv.appendChild(del); wrapper.appendChild(rowDiv); container.appendChild(wrapper);
             });
             scrollToBottom();
         });
     }
 
-    // --- YouTube プレイヤー & リアルタイム同期機能 (ライブアーカイブ対応版) ---
+    // --- YouTube プレイヤー & リアルタイム同期機能 ---
     function extractVideoId(url) {
-        // 通常動画, youtu.be, embed, live, shorts 等すべての形式のURLに対応
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|live\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
         const match = url.match(regExp);
         return (match && match[2].length === 11) ? match[2] : null;
     }
 
-    // 動画/ライブアーカイブを流すボタン
+    // 動画/ショートカット処理ボタン
     document.getElementById('media-share-btn').onclick = async () => {
         const urlInput = document.getElementById('media-url-input').value.trim();
+        
+        // 特殊コマンド判定（別タブで開く）
+        if (urlInput.toLowerCase() === 'hal') {
+            window.open("https://steamcommunity.com/id/halsawa/", "_blank");
+            document.getElementById('media-url-input').value = '';
+            return;
+        }
+        if (urlInput.toLowerCase() === 'mel') {
+            window.open("https://steamcommunity.com/id/melmelpython/", "_blank");
+            document.getElementById('media-url-input').value = '';
+            return;
+        }
+
         const videoId = extractVideoId(urlInput);
-        if (!videoId) { alert("有効なYouTubeのURLを入力してください（通常動画・ライブアーカイブ対応）"); return; }
+        if (!videoId) { alert("有効なYouTubeのURLを入力してください"); return; }
         
         window.currentVideoId = videoId;
         if (window.player && window.player.loadVideoById) {
@@ -310,7 +319,7 @@
         
         let stateString = "paused";
         if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
-        else if (event.data == YT.PlayerState.BUFFERING) return; // 読み込み中の余計な同期を防ぐ
+        else if (event.data == YT.PlayerState.BUFFERING) return;
 
         try {
             window.isUpdatingFromFirebase = true;
@@ -332,7 +341,6 @@
             const state = window.player.getPlayerState();
             if (state === YT.PlayerState.PLAYING) {
                 const currentTime = window.player.getCurrentTime();
-                // 3秒以上のズレ、または大幅なシークがあった場合に送信
                 if (Math.abs(currentTime - lastSentTime) > 3) {
                     lastSentTime = currentTime;
                     await setDoc(doc(db, "shared_media_v4", "current"), {
@@ -343,27 +351,24 @@
         } catch (e) {}
     }, 3000);
 
-    // Firebaseからのリアルタイム同期（相手の操作を受け取る）
+    // Firebaseからのリアルタイム同期
     if (db) {
         onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
             if (!docSnap.exists() || !window.player || typeof window.player.loadVideoById !== 'function') return;
             const data = docSnap.data();
-            if (data.updatedBy === myId) return; // 自分が操作した通知はスルー
+            if (data.updatedBy === myId) return;
             
             window.isUpdatingFromFirebase = true;
             
-            // 動画・ライブアーカイブが切り替わった場合
             if (data.videoId && data.videoId !== window.currentVideoId) {
                 window.currentVideoId = data.videoId;
                 window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime || 0 });
             } else if (data.currentTime !== undefined) {
                 const currentLocalTime = typeof window.player.getCurrentTime === 'function' ? window.player.getCurrentTime() : 0;
-                // ライブアーカイブ等のシークズレ対策（3秒以上のズレがあれば追いつかせる）
                 if (Math.abs(currentLocalTime - data.currentTime) > 3) {
                     window.player.seekTo(data.currentTime, true);
                 }
                 
-                // 再生・一時停止の同期
                 if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) {
                     window.player.playVideo();
                 } else if (data.state === 'paused' && window.player.getPlayerState() === YT.PlayerState.PLAYING) {
