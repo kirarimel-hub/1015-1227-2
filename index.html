@@ -45,9 +45,9 @@
         .other-messages .reaction-badge-container { left: 10px; }
 
         /* インスタ風ポップアップ */
-        .reaction-popup { display: none; position: absolute; background: white; border-radius: 30px; padding: 5px 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); gap: 8px; z-index: 999; animation: popUp 0.15s ease-out; border: 1px solid #ddd; }
+        .reaction-popup { display: none; position: absolute; background: white; border-radius: 30px; padding: 5px 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); gap: 6px; z-index: 999; animation: popUp 0.15s ease-out; border: 1px solid #ddd; }
         @keyframes popUp { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .reaction-emoji-btn { font-size: 1.3rem; border: none; background: none; cursor: pointer; padding: 0 2px; transition: transform 0.1s; }
+        .reaction-emoji-btn { font-size: 1.2rem; border: none; background: none; cursor: pointer; padding: 0 2px; transition: transform 0.1s; }
         .reaction-emoji-btn:hover { transform: scale(1.25); }
 
         /* 削除リンク */
@@ -90,13 +90,17 @@
 
     <div id="messages"></div>
 
+    <!-- スタンプに 🥺, 🥹, 🌿 を追加済み -->
     <div id="global-reaction-popup" class="reaction-popup">
-        <button class="reaction-emoji-btn" data-emoji="👍">👍</button>
-        <button class="reaction-emoji-btn" data-emoji="❤️">❤️</button>
-        <button class="reaction-emoji-btn" data-emoji="😂">😂</button>
-        <button class="reaction-emoji-btn" data-emoji="😮">😮</button>
-        <button class="reaction-emoji-btn" data-emoji="😢">😢</button>
-        <button class="reaction-emoji-btn" data-emoji="🙏">🙏</button>
+        <button class="reaction-emoji-btn">👍</button>
+        <button class="reaction-emoji-btn">❤️</button>
+        <button class="reaction-emoji-btn">😂</button>
+        <button class="reaction-emoji-btn">😮</button>
+        <button class="reaction-emoji-btn">😢</button>
+        <button class="reaction-emoji-btn">🙏</button>
+        <button class="reaction-emoji-btn">🥺</button>
+        <button class="reaction-emoji-btn">🥹</button>
+        <button class="reaction-emoji-btn">🌿</button>
     </div>
 
     <div id="input-container">
@@ -222,7 +226,7 @@
         const rect = e.currentTarget.getBoundingClientRect();
         const containerRect = document.getElementById('chat-container').getBoundingClientRect();
         popup.style.top = `${rect.top - containerRect.top - 45}px`;
-        popup.style.left = `${Math.min(Math.max(rect.left - containerRect.left + (rect.width/2) - 100, 10), containerRect.width - 210)}px`;
+        popup.style.left = `${Math.min(Math.max(rect.left - containerRect.left + (rect.width/2) - 120, 10), containerRect.width - 270)}px`;
         popup.style.display = 'flex';
     };
 
@@ -262,7 +266,6 @@
                 
                 rowDiv.appendChild(msgDiv);
                 
-                // 個別削除リンク（修正箇所）
                 const del = document.createElement('span'); del.className = 'msg-delete-link'; del.textContent = '削除'; 
                 del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(db, "chat_messages", msgId)); };
                 rowDiv.appendChild(del); wrapper.appendChild(rowDiv); container.appendChild(wrapper);
@@ -278,11 +281,10 @@
         return (match && match[2].length === 11) ? match[2] : null;
     }
 
-    // 動画/ショートカット処理ボタン
     document.getElementById('media-share-btn').onclick = async () => {
         const urlInput = document.getElementById('media-url-input').value.trim();
         
-        // 特殊コマンド判定（別タブで開く）
+        // 隠しコマンド判定
         if (urlInput.toLowerCase() === 'hal') {
             window.open("https://steamcommunity.com/id/halsawa/", "_blank");
             document.getElementById('media-url-input').value = '';
@@ -290,6 +292,11 @@
         }
         if (urlInput.toLowerCase() === 'mel') {
             window.open("https://steamcommunity.com/id/melmelpython/", "_blank");
+            document.getElementById('media-url-input').value = '';
+            return;
+        }
+        if (urlInput.toLowerCase() === 'tel') {
+            window.open("https://bizmee.net/1015-1227-2", "_blank");
             document.getElementById('media-url-input').value = '';
             return;
         }
@@ -307,13 +314,13 @@
                 await setDoc(doc(db, "shared_media_v4", "current"), {
                     type: 'youtube', videoId: videoId, state: 'playing', currentTime: 0, updatedBy: myId, timestamp: Date.now()
                 });
-                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
+                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 300);
             } catch (e) { console.error(e); }
         }
         document.getElementById('media-url-input').value = '';
     };
 
-    // 再生・一時停止の状態が変わったとき
+    // 再生・一時停止・手動シークイベントのキャッチと送信
     window.onPlayerStateChangeCallback = async function(event) {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
         
@@ -327,48 +334,53 @@
             await setDoc(doc(db, "shared_media_v4", "current"), {
                 type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: currentTime, updatedBy: myId, timestamp: Date.now()
             });
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 400);
         } catch (e) {}
     };
 
-    // 再生位置（シーク）の定期的な同期処理
-    let lastSentTime = 0;
+    // シーク（飛ばし操作）の監視
+    let lastKnownTime = 0;
     setInterval(async () => {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
-        if (typeof window.player.getPlayerState !== 'function' || typeof window.player.getCurrentTime !== 'function') return;
-        
-        try {
-            const state = window.player.getPlayerState();
-            if (state === YT.PlayerState.PLAYING) {
-                const currentTime = window.player.getCurrentTime();
-                if (Math.abs(currentTime - lastSentTime) > 3) {
-                    lastSentTime = currentTime;
-                    await setDoc(doc(db, "shared_media_v4", "current"), {
-                        type: 'youtube', videoId: window.currentVideoId, state: 'playing', currentTime: currentTime, updatedBy: myId, timestamp: Date.now()
-                    }, { merge: true });
-                }
-            }
-        } catch (e) {}
-    }, 3000);
+        if (typeof window.player.getCurrentTime !== 'function') return;
 
-    // Firebaseからのリアルタイム同期
+        try {
+            const currentTime = window.player.getCurrentTime();
+            // 手動で動画をスキップ（大きく飛ばす）したかを検知
+            if (Math.abs(currentTime - lastKnownTime) > 2) {
+                window.isUpdatingFromFirebase = true;
+                const state = window.player.getPlayerState() === YT.PlayerState.PLAYING ? 'playing' : 'paused';
+                await setDoc(doc(db, "shared_media_v4", "current"), {
+                    type: 'youtube', videoId: window.currentVideoId, state: state, currentTime: currentTime, updatedBy: myId, timestamp: Date.now()
+                }, { merge: true });
+                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 400);
+            }
+            lastKnownTime = currentTime;
+        } catch (e) {}
+    }, 1000);
+
+    // Firebaseからのリアルタイム同期（相手の停止・スキップ操作の即時受け取り）
     if (db) {
         onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
             if (!docSnap.exists() || !window.player || typeof window.player.loadVideoById !== 'function') return;
             const data = docSnap.data();
-            if (data.updatedBy === myId) return;
+            if (data.updatedBy === myId) return; // 自分の操作はスルー
             
             window.isUpdatingFromFirebase = true;
             
+            // 動画の切り替え
             if (data.videoId && data.videoId !== window.currentVideoId) {
                 window.currentVideoId = data.videoId;
                 window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime || 0 });
             } else if (data.currentTime !== undefined) {
                 const currentLocalTime = typeof window.player.getCurrentTime === 'function' ? window.player.getCurrentTime() : 0;
-                if (Math.abs(currentLocalTime - data.currentTime) > 3) {
+                
+                // 再生位置のズレ（シーク）を即座に合わせる
+                if (Math.abs(currentLocalTime - data.currentTime) > 1.5) {
                     window.player.seekTo(data.currentTime, true);
                 }
                 
+                // 相手の再生・停止状態に合わせる
                 if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) {
                     window.player.playVideo();
                 } else if (data.state === 'paused' && window.player.getPlayerState() === YT.PlayerState.PLAYING) {
@@ -376,7 +388,7 @@
                 }
             }
             
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 300);
         });
     }
 
