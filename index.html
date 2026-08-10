@@ -69,7 +69,6 @@
         <button id="clear-all-btn" style="background:#dc3545; color:white; border:none; border-radius:4px; padding: 5px 10px; cursor:pointer; font-size:0.85rem;">全削除</button>
     </div>
 
-    <!-- メディア共有セクション -->
     <div id="media-section">
         <div id="media-input-wrapper">
             <input type="text" id="media-url-input" placeholder="YouTubeのURLを入力">
@@ -80,7 +79,6 @@
                 <div class="media-tabs">
                     <button class="media-tab-btn active" id="tab-youtube">YouTube (同期中)</button>
                 </div>
-                <button id="media-toggle-btn" style="background:none; border:none; color:white; cursor:pointer; font-size:1rem;">➖</button>
             </div>
             <div id="media-screen">
                 <div id="youtube-player"></div>
@@ -112,28 +110,21 @@
 
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
+    // YouTube API関連のグローバル変数
     window.player = null; 
     window.currentVideoId = "JFf3uASYM4E"; 
-    window.isUpdatingFromFirebase = false;
 
+    // APIロード完了時
     window.onYouTubeIframeAPIReady = function() {
-        try {
-            window.player = new YT.Player('youtube-player', {
-                height: '100%',
-                width: '100%',
-                videoId: window.currentVideoId, 
-                playerVars: { 
-                    'autoplay': 1, 
-                    'controls': 1, 
-                    'rel': 0, 
-                    'playsinline': 1,
-                    'enablejsapi': 1 
-                },
-                events: { 
-                    'onStateChange': window.onPlayerStateChangeCallback 
-                }
-            });
-        } catch (e) { console.error("YouTube Player Init Error:", e); }
+        window.player = new YT.Player('youtube-player', {
+            height: '100%',
+            width: '100%',
+            videoId: window.currentVideoId, 
+            playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+            events: { 
+                'onStateChange': (e) => { if(window.onPlayerStateChangeCallback) window.onPlayerStateChangeCallback(e); } 
+            }
+        });
     };
 </script>
 
@@ -150,181 +141,112 @@
         appId: "1:34152717352:web:244bc26dbcf8dec5b7691d"
     };
 
-    let db = null;
-    try {
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-    } catch (e) { console.error("Firebase Init Error:", e); }
-
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
     const myId = Math.random().toString(36).substring(2, 9);
-    let activeMessageId = null;
+    let isUpdatingFromFirebase = false;
+
+    // --- 動画状態同期ロジック ---
+    window.onPlayerStateChangeCallback = function(event) {
+        if (isUpdatingFromFirebase) return;
+        const state = (event.data === YT.PlayerState.PLAYING) ? "playing" : "paused";
+        syncToFirebase(state, window.player.getCurrentTime());
+    };
+
+    async function syncToFirebase(state, time) {
+        if (isUpdatingFromFirebase) return;
+        try {
+            await setDoc(doc(db, "shared_media_v4", "current"), {
+                videoId: window.currentVideoId,
+                state: state,
+                currentTime: time,
+                updatedBy: myId,
+                timestamp: Date.now()
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    // 2秒ごとに現在位置をサーバーへ定期送信（シーク対応）
+    setInterval(() => {
+        if (window.player && window.player.getPlayerState && window.player.getPlayerState() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase) {
+            syncToFirebase("playing", window.player.getCurrentTime());
+        }
+    }, 2000);
+
+    // Firebaseの更新を購読
+    onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
+        if (!docSnap.exists() || !window.player) return;
+        const data = docSnap.data();
+        if (data.updatedBy === myId) return;
+
+        isUpdatingFromFirebase = true;
+
+        if (data.videoId !== window.currentVideoId) {
+            window.currentVideoId = data.videoId;
+            window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime });
+        } else {
+            const currentTime = window.player.getCurrentTime();
+            // 1.5秒以上のズレがある場合のみシーク（微調整）
+            if (Math.abs(currentTime - data.currentTime) > 1.5) {
+                window.player.seekTo(data.currentTime, true);
+            }
+            // 状態同期
+            if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                window.player.playVideo();
+            } else if (data.state === 'paused' && window.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                window.player.pauseVideo();
+            }
+        }
+        setTimeout(() => { isUpdatingFromFirebase = false; }, 500);
+    });
+
+    // --- チャット・その他機能 ---
     const container = document.getElementById('messages');
     const popup = document.getElementById('global-reaction-popup');
 
-    function scrollToBottom() { setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50); }
-
-    // --- 全削除機能 ---
-    document.getElementById('clear-all-btn').onclick = async () => {
-        if (!db || !confirm("本当にすべてのチャット履歴を削除しますか？")) return;
-        try {
-            const snap = await getDocs(query(collection(db, "chat_messages")));
-            for (const docSnapshot of snap.docs) { await deleteDoc(doc(db, "chat_messages", docSnapshot.id)); }
-            alert("すべてのチャットを削除しました！");
-        } catch (e) { alert("削除処理に失敗しました"); }
-    };
-
-    // --- スマホ画像圧縮・送信 ---
-    function compressAndSend(file) {
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            const img = new Image();
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 800;
-                let width = img.width, height = img.height;
-                if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } }
-                else { if (height > MAX_WIDTH) { width *= MAX_WIDTH / height; height = MAX_WIDTH; } }
-                canvas.width = width; canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                sendImageToFirebase(canvas.toDataURL('image/jpeg', 0.7));
-            };
-            img.src = event.target.result;
-        };
-        reader.readAsDataURL(file);
-    }
-
-    async function sendImageToFirebase(base64Str) {
-        if (!db) return;
-        try { await addDoc(collection(db, "chat_messages"), { senderId: myId, image: base64Str, createdAt: serverTimestamp(), reactions: {} }); } catch (e) { console.error(e); }
-    }
-
-    document.getElementById('file-input').onchange = (e) => { if (e.target.files[0]) compressAndSend(e.target.files[0]); e.target.value = ''; };
-    
-    // --- テキスト送信 ---
-    document.getElementById('send-btn').onclick = async () => {
-        const input = document.getElementById('message-input');
-        if (!input.value.trim() || !db) return;
-        try { await addDoc(collection(db, "chat_messages"), { senderId: myId, text: input.value.trim(), createdAt: serverTimestamp(), reactions: {} }); input.value = ''; } catch (e) { console.error(e); }
-    };
-
-    document.getElementById('message-input').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('send-btn').click(); };
-
-    // --- リアクション処理 ---
-    window.openReactionMenu = function(e, msgId) {
-        e.stopPropagation(); activeMessageId = msgId;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const containerRect = document.getElementById('chat-container').getBoundingClientRect();
-        popup.style.top = `${rect.top - containerRect.top - 60}px`;
-        popup.style.left = `${Math.min(Math.max(rect.left - containerRect.left + (rect.width/2) - 110, 10), containerRect.width - 230)}px`;
-        popup.style.display = 'flex';
-    };
-
-    document.addEventListener('click', () => { popup.style.display = 'none'; });
-
-    document.querySelectorAll('.reaction-emoji-btn').forEach(btn => {
-        btn.onclick = async (e) => {
-            e.stopPropagation(); if (!activeMessageId || !db) return;
-            const emoji = btn.dataset.emoji, msgRef = doc(db, "chat_messages", activeMessageId);
-            popup.style.display = 'none';
-            try {
-                const docSnap = await getDocs(query(collection(db, "chat_messages")));
-                let reactions = {}; 
-                docSnap.forEach(d => { if(d.id === activeMessageId) reactions = d.data().reactions || {}; });
-                if (reactions[emoji] && reactions[emoji].includes(myId)) { reactions[emoji] = reactions[emoji].filter(id => id !== myId); if (reactions[emoji].length === 0) delete reactions[emoji]; }
-                else { if (!reactions[emoji]) reactions[emoji] = []; reactions[emoji].push(myId); }
-                await updateDoc(msgRef, { reactions });
-            } catch (err) { console.error(err); }
-        };
-    });
-
-    // --- チャットリアルタイム描画 ---
-    if (db) {
-        onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
-            container.innerHTML = '';
-            snap.forEach(d => {
-                const data = d.data(), msgId = d.id, reactions = data.reactions || {};
-                const wrapper = document.createElement('div');
-                wrapper.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
-                const rowDiv = document.createElement('div'); rowDiv.className = 'message-row';
-                const msgDiv = document.createElement('div'); msgDiv.className = 'message';
-                if (data.image) { const img = document.createElement('img'); img.src = data.image; msgDiv.appendChild(img); } else { msgDiv.textContent = data.text; }
-                msgDiv.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`);
-                
-                let count = 0, badgeText = "";
-                for (const [e, u] of Object.entries(reactions)) { if (u.length > 0) { badgeText += `${e}${u.length} `; count += u.length; } }
-                if (count > 0) { const b = document.createElement('div'); b.className = 'reaction-badge-container'; b.textContent = badgeText.trim(); b.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`); msgDiv.appendChild(b); }
-                
-                rowDiv.appendChild(msgDiv);
-                const del = document.createElement('span'); del.className = 'msg-delete-link'; del.textContent = '削除'; 
-                del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(db, "chat_messages", msgId)); };
-                rowDiv.appendChild(del); wrapper.appendChild(rowDiv); container.appendChild(wrapper);
-            });
-            scrollToBottom();
-        });
-    }
-
-    // --- YouTube プレイヤー & リアルタイム同期機能 ---
-    function extractVideoId(url) {
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|live\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
-    }
-
+    // 動画共有ボタン
     document.getElementById('media-share-btn').onclick = async () => {
         const urlInput = document.getElementById('media-url-input').value.trim();
         
         // 特殊コマンド
-        if (urlInput.toLowerCase() === 'hal') { window.open("https://steamcommunity.com/id/halsawa/", "_blank"); document.getElementById('media-url-input').value = ''; return; }
-        if (urlInput.toLowerCase() === 'mel') { window.open("https://steamcommunity.com/id/melmelpython/", "_blank"); document.getElementById('media-url-input').value = ''; return; }
-        if (urlInput.toLowerCase() === 'tel') { window.open("https://bizmee.net/1015-1227-2", "_blank"); document.getElementById('media-url-input').value = ''; return; }
+        if (urlInput.toLowerCase() === 'hal') { window.open("https://steamcommunity.com/id/halsawa/", "_blank"); return; }
+        if (urlInput.toLowerCase() === 'mel') { window.open("https://steamcommunity.com/id/melmelpython/", "_blank"); return; }
+        if (urlInput.toLowerCase() === 'tel') { window.open("https://bizmee.net/1015-1227-2", "_blank"); return; }
 
-        const videoId = extractVideoId(urlInput);
-        if (!videoId) { alert("有効なYouTubeのURLを入力してください"); return; }
-        
-        window.currentVideoId = videoId;
-        if (window.player && window.player.loadVideoById) window.player.loadVideoById({ videoId: videoId, startSeconds: 0 });
-        if (db) {
-            try {
-                window.isUpdatingFromFirebase = true;
-                await setDoc(doc(db, "shared_media_v4", "current"), { type: 'youtube', videoId: videoId, state: 'playing', currentTime: 0, updatedBy: myId, timestamp: Date.now() });
-                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
-            } catch (e) {}
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|live\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        const match = urlInput.match(regExp);
+        const videoId = (match && match[2].length === 11) ? match[2] : null;
+
+        if (videoId) {
+            window.currentVideoId = videoId;
+            window.player.loadVideoById(videoId);
+            syncToFirebase('playing', 0);
         }
         document.getElementById('media-url-input').value = '';
     };
 
-    window.onPlayerStateChangeCallback = async function(event) {
-        if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
-        let stateString = (event.data == YT.PlayerState.PLAYING) ? "playing" : "paused";
-        if (event.data == YT.PlayerState.BUFFERING) return;
-        try {
-            window.isUpdatingFromFirebase = true;
-            await setDoc(doc(db, "shared_media_v4", "current"), { type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now() });
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
-        } catch (e) {}
-    };
-
-    if (db) {
-        onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
-            if (!docSnap.exists() || !window.player) return;
-            const data = docSnap.data();
-            if (data.updatedBy === myId) return;
-            window.isUpdatingFromFirebase = true;
-            if (data.videoId && data.videoId !== window.currentVideoId) {
-                window.currentVideoId = data.videoId;
-                window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime || 0 });
-            } else if (data.currentTime !== undefined) {
-                if (Math.abs(window.player.getCurrentTime() - data.currentTime) > 3) window.player.seekTo(data.currentTime, true);
-                if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                    window.player.playVideo();
-                } else if (data.state === 'paused' && window.player.getPlayerState() !== YT.PlayerState.PAUSED) {
-                    window.player.pauseVideo();
-                }
-            }
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 1200);
+    // チャット描画処理
+    onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
+        container.innerHTML = '';
+        snap.forEach(d => {
+            const data = d.data(), msgId = d.id;
+            const wrapper = document.createElement('div');
+            wrapper.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
+            const msgDiv = document.createElement('div'); msgDiv.className = 'message';
+            if (data.image) { const img = document.createElement('img'); img.src = data.image; msgDiv.appendChild(img); } else { msgDiv.textContent = data.text; }
+            wrapper.appendChild(msgDiv);
+            container.appendChild(wrapper);
         });
-    }
+        container.scrollTop = container.scrollHeight;
+    });
+
+    document.getElementById('send-btn').onclick = async () => {
+        const input = document.getElementById('message-input');
+        if (input.value.trim()) {
+            await addDoc(collection(db, "chat_messages"), { senderId: myId, text: input.value.trim(), createdAt: serverTimestamp() });
+            input.value = '';
+        }
+    };
 </script>
 </body>
 </html>
