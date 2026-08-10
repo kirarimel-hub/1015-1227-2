@@ -11,10 +11,12 @@
         #header { background: #007bff; color: white; padding: 10px 12px; display: flex; justify-content: flex-end; align-items: center; flex-shrink: 0; }
         
         #media-section { background: #111; padding: 10px; flex-shrink: 0; }
-        #media-input-wrapper { display: flex; gap: 5px; margin-bottom: 10px; }
+        #media-input-wrapper { display: flex; gap: 5px; margin-bottom: 8px; }
         #media-url-input { flex: 1; padding: 8px; border-radius: 4px; border: none; font-size: 0.9rem; background: #222; color: #fff; outline: none; }
         #media-share-btn { background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; }
         
+        #sync-start-btn { width: 100%; background: #ff9800; color: white; border: none; padding: 8px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-bottom: 8px; font-size: 0.85rem; }
+
         #media-container { display: flex; flex-direction: column; transition: all 0.3s; }
         #media-menu { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 5px 10px; }
         .media-tabs { display: flex; gap: 5px; }
@@ -63,6 +65,7 @@
     </div>
 
     <div id="media-section">
+        <button id="sync-start-btn">⚠️ 最初にここをタップして同時視聴を準備</button>
         <div id="media-input-wrapper">
             <input type="text" id="media-url-input" placeholder="YouTubeのURLを入力">
             <button id="media-share-btn">動画を流す</button>
@@ -99,7 +102,7 @@
     window.player = null; 
     window.currentVideoId = "JFf3uASYM4E"; 
     window.isUpdatingFromFirebase = false;
-    window.isPlayerReady = false; // プレイヤー準備フラグ
+    window.isPlayerReady = false;
 
     window.onYouTubeIframeAPIReady = function() {
         try {
@@ -107,19 +110,19 @@
                 height: '100%',
                 width: '100%',
                 videoId: window.currentVideoId, 
-                playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1, 'enablejsapi': 1 },
+                playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1, 'enablejsapi': 1 },
                 events: { 
-                    'onReady': () => { window.isPlayerReady = true; }, // 準備完了をマーク
+                    'onReady': () => { window.isPlayerReady = true; },
                     'onStateChange': window.onPlayerStateChangeCallback 
                 }
             });
-        } catch (e) { console.error("YouTube Player Init Error:", e); }
+        } catch (e) { console.error(e); }
     };
 </script>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs, updateDoc, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
@@ -142,6 +145,19 @@
     const popup = document.getElementById('global-reaction-popup');
 
     function scrollToBottom() { setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50); }
+
+    // --- ブラウザの自動再生ロック解除用ボタン ---
+    document.getElementById('sync-start-btn').onclick = () => {
+        if (window.player && typeof window.player.playVideo === 'function') {
+            window.player.playVideo();
+            setTimeout(() => {
+                window.player.pauseVideo();
+                const btn = document.getElementById('sync-start-btn');
+                btn.style.background = "#28a745";
+                btn.textContent = "✅ 同期準備OK!";
+            }, 300);
+        }
+    };
 
     document.getElementById('clear-all-btn').onclick = async () => {
         if (!db || !confirm("本当にすべてのチャット履歴を削除しますか？")) return;
@@ -229,6 +245,22 @@
         });
     }
 
+    // --- 動画同期処理 (Firebaseイベント駆動) ---
+    async function sendPlayerSignal(action, time) {
+        if (!db || window.isUpdatingFromFirebase) return;
+        try {
+            window.isUpdatingFromFirebase = true;
+            await addDoc(collection(db, "sync_events"), {
+                action: action,
+                videoId: window.currentVideoId,
+                currentTime: time || (window.player ? window.player.getCurrentTime() : 0),
+                senderId: myId,
+                createdAt: Date.now()
+            });
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 400);
+        } catch (e) { console.error("Signal Error:", e); }
+    }
+
     document.getElementById('media-share-btn').onclick = async () => {
         const urlInput = document.getElementById('media-url-input').value.trim();
         if (urlInput.toLowerCase() === 'hal') { window.open("https://steamcommunity.com/id/halsawa/", "_blank"); return; }
@@ -237,38 +269,58 @@
         const match = urlInput.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|live\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/);
         const videoId = (match && match[2].length === 11) ? match[2] : null;
         if (!videoId) { alert("有効なYouTubeのURLを入力してください"); return; }
+        
         window.currentVideoId = videoId;
         if (window.isPlayerReady && window.player) window.player.loadVideoById({ videoId: videoId, startSeconds: 0 });
-        if (db) {
-            window.isUpdatingFromFirebase = true;
-            await setDoc(doc(db, "shared_media_v4", "current"), { type: 'youtube', videoId: videoId, state: 'playing', currentTime: 0, updatedBy: myId, timestamp: Date.now() });
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
-        }
+        sendPlayerSignal('changeVideo', 0);
         document.getElementById('media-url-input').value = '';
     };
 
-    window.onPlayerStateChangeCallback = async function(event) {
-        if (!window.isPlayerReady || window.isUpdatingFromFirebase || !db) return;
-        let stateString = (event.data === YT.PlayerState.PLAYING) ? "playing" : (event.data === YT.PlayerState.PAUSED) ? "paused" : null;
-        if (!stateString) return;
-        window.isUpdatingFromFirebase = true;
-        await setDoc(doc(db, "shared_media_v4", "current"), { type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now() }, { merge: true });
-        setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
+    window.onPlayerStateChangeCallback = function(event) {
+        if (!window.isPlayerReady || window.isUpdatingFromFirebase) return;
+        if (event.data === YT.PlayerState.PLAYING) {
+            sendPlayerSignal('play', window.player.getCurrentTime());
+        } else if (event.data === YT.PlayerState.PAUSED) {
+            sendPlayerSignal('pause', window.player.getCurrentTime());
+        }
     };
 
-    if (db) {
-        onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
-            // プレイヤーが準備完了し、かつ自分の操作ではない場合のみ実行
-            if (!docSnap.exists() || !window.isPlayerReady || !window.player) return;
-            const data = docSnap.data();
-            if (data.updatedBy === myId) return;
-            window.isUpdatingFromFirebase = true;
-            if (data.videoId && data.videoId !== window.currentVideoId) { window.currentVideoId = data.videoId; window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime || 0 }); }
-            else if (data.currentTime !== undefined) {
-                if (Math.abs(window.player.getCurrentTime() - data.currentTime) > 1.5) window.player.seekTo(data.currentTime, true);
-                if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) window.player.playVideo();
-                else if (data.state === 'paused' && window.player.getPlayerState() !== YT.PlayerState.PAUSED) window.player.pauseVideo();
+    // シーク（飛ばす・戻す）検出
+    let lastTime = 0;
+    setInterval(() => {
+        if (!window.isPlayerReady || !window.player || window.isUpdatingFromFirebase) return;
+        try {
+            const now = window.player.getCurrentTime();
+            if (Math.abs(now - lastTime) > 2.0) {
+                sendPlayerSignal('seek', now);
             }
+            lastTime = now;
+        } catch (e) {}
+    }, 800);
+
+    // 相手の操作を受信して完全同期
+    if (db) {
+        onSnapshot(query(collection(db, "sync_events"), orderBy("createdAt", "desc"), limit(1)), (snap) => {
+            if (snap.empty || !window.isPlayerReady || !window.player) return;
+            const eventData = snap.docs[0].data();
+            if (eventData.senderId === myId) return; // 自分の操作は無視
+
+            window.isUpdatingFromFirebase = true;
+
+            if (eventData.action === 'changeVideo' && eventData.videoId !== window.currentVideoId) {
+                window.currentVideoId = eventData.videoId;
+                window.player.loadVideoById({ videoId: eventData.videoId, startSeconds: 0 });
+            } else {
+                if (Math.abs(window.player.getCurrentTime() - eventData.currentTime) > 1.2) {
+                    window.player.seekTo(eventData.currentTime, true);
+                }
+                if (eventData.action === 'play') {
+                    window.player.playVideo();
+                } else if (eventData.action === 'pause') {
+                    window.player.pauseVideo();
+                }
+            }
+
             setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
         });
     }
