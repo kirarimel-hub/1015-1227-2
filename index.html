@@ -69,7 +69,6 @@
         <button id="clear-all-btn" style="background:#dc3545; color:white; border:none; border-radius:4px; padding: 5px 10px; cursor:pointer; font-size:0.85rem;">全削除</button>
     </div>
 
-    <!-- メディア共有セクション -->
     <div id="media-section">
         <div id="media-input-wrapper">
             <input type="text" id="media-url-input" placeholder="YouTubeのURLを入力">
@@ -90,7 +89,6 @@
 
     <div id="messages"></div>
 
-    <!-- スタンプ（🥺, 🥹, 🌿 追加済み） -->
     <div id="global-reaction-popup" class="reaction-popup">
         <button class="reaction-emoji-btn">👍</button>
         <button class="reaction-emoji-btn">❤️</button>
@@ -123,16 +121,8 @@
                 height: '100%',
                 width: '100%',
                 videoId: window.currentVideoId, 
-                playerVars: { 
-                    'autoplay': 1, 
-                    'controls': 1, 
-                    'rel': 0, 
-                    'playsinline': 1,
-                    'enablejsapi': 1 
-                },
-                events: { 
-                    'onStateChange': window.onPlayerStateChangeCallback 
-                }
+                playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'playsinline': 1, 'enablejsapi': 1 },
+                events: { 'onStateChange': window.onPlayerStateChangeCallback }
             });
         } catch (e) { console.error("YouTube Player Init Error:", e); }
     };
@@ -168,22 +158,13 @@
     document.getElementById('clear-all-btn').onclick = async () => {
         if (!db || !confirm("本当にすべてのチャット履歴を削除しますか？")) return;
         try {
-            const snap = await getDocs(query(collection(db, "chat_messages")));
-            let errorCount = 0;
-            for (const docSnapshot of snap.docs) {
-                try {
-                    await deleteDoc(doc(db, "chat_messages", docSnapshot.id));
-                } catch (e) { errorCount++; }
-            }
-            if (errorCount > 0) {
-                alert(`エラー：${errorCount}件の削除に失敗しました。Firebaseのセキュリティルールを確認してください。`);
-            } else {
-                alert("すべてのチャットを削除しました！");
-            }
-        } catch (e) { alert("削除処理に失敗しました: " + e.message); }
+            const snap = await getDocs(query(collection(db, "messages")));
+            for (const docSnapshot of snap.docs) { await deleteDoc(doc(db, "messages", docSnapshot.id)); }
+            alert("すべてのチャットを削除しました！");
+        } catch (e) { alert("削除処理に失敗しました"); }
     };
 
-    // --- スマホ画像圧縮・送信 ---
+    // --- 画像・テキスト送信 ---
     function compressAndSend(file) {
         const reader = new FileReader();
         reader.onload = function(event) {
@@ -195,8 +176,7 @@
                 if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } }
                 else { if (height > MAX_WIDTH) { width *= MAX_WIDTH / height; height = MAX_WIDTH; } }
                 canvas.width = width; canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
+                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
                 sendImageToFirebase(canvas.toDataURL('image/jpeg', 0.7));
             };
             img.src = event.target.result;
@@ -206,21 +186,18 @@
 
     async function sendImageToFirebase(base64Str) {
         if (!db) return;
-        try { await addDoc(collection(db, "chat_messages"), { senderId: myId, image: base64Str, createdAt: serverTimestamp(), reactions: {} }); } catch (e) { console.error(e); }
+        try { await addDoc(collection(db, "messages"), { senderId: myId, image: base64Str, createdAt: serverTimestamp(), reactions: {} }); } catch (e) { console.error(e); }
     }
 
-    document.getElementById('file-input').onchange = (e) => { if (e.target.files[0]) compressAndSend(e.target.files[0]); e.target.value = ''; };
-    
-    // --- テキスト送信 ---
+    document.getElementById('file-input').onchange = (e) => { if (e.target.files[0]) compressAndSend(e.target.files[0]); };
     document.getElementById('send-btn').onclick = async () => {
         const input = document.getElementById('message-input');
         if (!input.value.trim() || !db) return;
-        try { await addDoc(collection(db, "chat_messages"), { senderId: myId, text: input.value.trim(), createdAt: serverTimestamp(), reactions: {} }); input.value = ''; } catch (e) { console.error(e); }
+        try { await addDoc(collection(db, "messages"), { senderId: myId, text: input.value.trim(), createdAt: serverTimestamp(), reactions: {} }); input.value = ''; } catch (e) { console.error(e); }
     };
-
     document.getElementById('message-input').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('send-btn').click(); };
 
-    // --- リアクション処理 ---
+    // --- リアクション・描画 ---
     window.openReactionMenu = function(e, msgId) {
         e.stopPropagation(); activeMessageId = msgId;
         const rect = e.currentTarget.getBoundingClientRect();
@@ -235,27 +212,23 @@
     document.querySelectorAll('.reaction-emoji-btn').forEach(btn => {
         btn.onclick = async (e) => {
             e.stopPropagation(); if (!activeMessageId || !db) return;
-            const emoji = btn.textContent, msgRef = doc(db, "chat_messages", activeMessageId);
+            const emoji = btn.textContent, msgRef = doc(db, "messages", activeMessageId);
             popup.style.display = 'none';
-            try {
-                const snap = await getDocs(query(collection(db, "chat_messages")));
-                let reactions = {}; snap.forEach(d => { if(d.id === activeMessageId) reactions = d.data().reactions || {}; });
-                if (reactions[emoji] && reactions[emoji].includes(myId)) { reactions[emoji] = reactions[emoji].filter(id => id !== myId); if (reactions[emoji].length === 0) delete reactions[emoji]; }
-                else { if (!reactions[emoji]) reactions[emoji] = []; reactions[emoji].push(myId); }
-                await updateDoc(msgRef, { reactions });
-            } catch (err) { console.error(err); }
+            const snap = await getDocs(query(collection(db, "messages")));
+            let reactions = {}; snap.forEach(d => { if(d.id === activeMessageId) reactions = d.data().reactions || {}; });
+            if (reactions[emoji] && reactions[emoji].includes(myId)) { reactions[emoji] = reactions[emoji].filter(id => id !== myId); if (reactions[emoji].length === 0) delete reactions[emoji]; }
+            else { if (!reactions[emoji]) reactions[emoji] = []; reactions[emoji].push(myId); }
+            await updateDoc(msgRef, { reactions });
         };
     });
 
-    // --- チャットリアルタイム描画 ---
     if (db) {
-        onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
+        onSnapshot(query(collection(db, "messages"), orderBy("createdAt", "asc")), (snap) => {
             container.innerHTML = '';
             snap.forEach(d => {
                 const data = d.data(), msgId = d.id, reactions = data.reactions || {};
                 const wrapper = document.createElement('div');
                 wrapper.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
-                const rowDiv = document.createElement('div'); rowDiv.className = 'message-row';
                 const msgDiv = document.createElement('div'); msgDiv.className = 'message';
                 if (data.image) { const img = document.createElement('img'); img.src = data.image; msgDiv.appendChild(img); } else { msgDiv.textContent = data.text; }
                 msgDiv.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`);
@@ -264,120 +237,71 @@
                 for (const [e, u] of Object.entries(reactions)) { if (u.length > 0) { badgeText += `${e}${u.length} `; count += u.length; } }
                 if (count > 0) { const b = document.createElement('div'); b.className = 'reaction-badge-container'; b.textContent = badgeText.trim(); b.setAttribute('onclick', `openReactionMenu(event, '${msgId}')`); msgDiv.appendChild(b); }
                 
-                rowDiv.appendChild(msgDiv);
-                
                 const del = document.createElement('span'); del.className = 'msg-delete-link'; del.textContent = '削除'; 
-                del.onclick = async (e) => { e.stopPropagation(); if(confirm("削除しますか？")) await deleteDoc(doc(db, "chat_messages", msgId)); };
-                rowDiv.appendChild(del); wrapper.appendChild(rowDiv); container.appendChild(wrapper);
+                del.onclick = async (e) => { e.stopPropagation(); await deleteDoc(doc(db, "messages", msgId)); };
+                const row = document.createElement('div'); row.className = 'message-row'; row.appendChild(msgDiv); row.appendChild(del);
+                wrapper.appendChild(row); container.appendChild(wrapper);
             });
             scrollToBottom();
         });
     }
 
-    // --- YouTube プレイヤー & 完全同期機能 ---
-    function extractVideoId(url) {
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|live\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
-    }
-
+    // --- YouTube 同期機能 ---
     document.getElementById('media-share-btn').onclick = async () => {
         const urlInput = document.getElementById('media-url-input').value.trim();
-        
-        // 隠しコマンド判定 (hal, mel, tel)
-        if (urlInput.toLowerCase() === 'hal') {
-            window.open("https://steamcommunity.com/id/halsawa/", "_blank");
-            document.getElementById('media-url-input').value = '';
-            return;
-        }
-        if (urlInput.toLowerCase() === 'mel') {
-            window.open("https://steamcommunity.com/id/melmelpython/", "_blank");
-            document.getElementById('media-url-input').value = '';
-            return;
-        }
-        if (urlInput.toLowerCase() === 'tel') {
-            window.open("https://bizmee.net/1015-1227-2", "_blank");
-            document.getElementById('media-url-input').value = '';
-            return;
-        }
-
-        const videoId = extractVideoId(urlInput);
+        if (urlInput.toLowerCase() === 'hal') { window.open("https://steamcommunity.com/id/halsawa/", "_blank"); return; }
+        if (urlInput.toLowerCase() === 'mel') { window.open("https://steamcommunity.com/id/melmelpython/", "_blank"); return; }
+        if (urlInput.toLowerCase() === 'tel') { window.open("https://bizmee.net/1015-1227-2", "_blank"); return; }
+        const match = urlInput.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|live\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/);
+        const videoId = (match && match[2].length === 11) ? match[2] : null;
         if (!videoId) { alert("有効なYouTubeのURLを入力してください"); return; }
-        
         window.currentVideoId = videoId;
-        if (window.player && window.player.loadVideoById) {
-            window.player.loadVideoById({ videoId: videoId, startSeconds: 0 });
-        }
+        if (window.player) window.player.loadVideoById({ videoId: videoId, startSeconds: 0 });
         if (db) {
-            try {
-                window.isUpdatingFromFirebase = true;
-                await setDoc(doc(db, "shared_media_v4", "current"), {
-                    type: 'youtube', videoId: videoId, state: 'playing', currentTime: 0, updatedBy: myId, timestamp: Date.now()
-                });
-                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
-            } catch (e) { console.error(e); }
+            window.isUpdatingFromFirebase = true;
+            await setDoc(doc(db, "shared_media_v4", "current"), { type: 'youtube', videoId: videoId, state: 'playing', currentTime: 0, updatedBy: myId, timestamp: Date.now() });
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
         }
         document.getElementById('media-url-input').value = '';
     };
 
-    // 自分の操作（再生・一時停止）をリアルタイムで同期送信
     window.onPlayerStateChangeCallback = async function(event) {
-        if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
-        
-        let stateString = null;
-        if (event.data === YT.PlayerState.PLAYING) stateString = "playing";
-        else if (event.data === YT.PlayerState.PAUSED) stateString = "paused";
-        else return;
-
-        try {
-            window.isUpdatingFromFirebase = true;
-            const currentTime = typeof window.player.getCurrentTime === 'function' ? window.player.getCurrentTime() : 0;
-            await setDoc(doc(db, "shared_media_v4", "current"), {
-                type: 'youtube', 
-                videoId: window.currentVideoId, 
-                state: stateString, 
-                currentTime: currentTime, 
-                updatedBy: myId, 
-                timestamp: Date.now()
-            }, { merge: true });
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
-        } catch (e) { console.error(e); }
+        if (!window.player || window.isUpdatingFromFirebase || !db) return;
+        let stateString = (event.data === YT.PlayerState.PLAYING) ? "playing" : (event.data === YT.PlayerState.PAUSED) ? "paused" : null;
+        if (!stateString) return;
+        window.isUpdatingFromFirebase = true;
+        await setDoc(doc(db, "shared_media_v4", "current"), { type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: window.player.getCurrentTime(), updatedBy: myId, timestamp: Date.now() }, { merge: true });
+        setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
     };
 
-    // シーク（飛ばす・戻す）操作の監視と自動同期
-    let lastKnownTime = 0;
     setInterval(async () => {
-        if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
-        if (typeof window.player.getCurrentTime !== 'function') return;
+        if (!window.player || window.isUpdatingFromFirebase || !db) return;
+        const currentTime = window.player.getCurrentTime();
+        if (Math.abs(currentTime - 0) > 1.8 && window.player.getPlayerState() === YT.PlayerState.PLAYING) { /* 簡易監視 */ }
+    }, 1000);
 
-        try {
-            const currentTime = window.player.getCurrentTime();
-            // 大きく時間がスキップされた場合（手動飛ばし・戻し）
-            if (Math.abs(currentTime - lastKnownTime) > 1.8) {
-                window.isUpdatingFromFirebase = true;
-                const state = window.player.getPlayerState() === YT.PlayerState.PLAYING ? 'playing' : 'paused';
-                await setDoc(doc(db, "shared_media_v4", "current"), {
-                    type: 'youtube', 
-                    videoId: window.currentVideoId, 
-                    state: state, 
-                    currentTime: currentTime, 
-                    updatedBy: myId, 
-                    timestamp: Date.now()
-                }, { merge: true });
-                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
-            }
-            lastKnownTime = currentTime;
-        } catch (e) {}
-    }, 800);
-
-    // Firebaseからの受信＆相手の操作（再生・停止・シーク）を完全適用
     if (db) {
         onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
-            if (!docSnap.exists() || !window.player || typeof window.player.loadVideoById !== 'function') return;
+            if (!docSnap.exists() || !window.player) return;
             const data = docSnap.data();
-            if (data.updatedBy === myId) return; // 自分の操作発信分は無視
-            
+            if (data.updatedBy === myId) return;
             window.isUpdatingFromFirebase = true;
-            
-            // 動画ID切り替え
-            if (data.videoId && data.videoId !== window.current
+            if (data.videoId && data.videoId !== window.currentVideoId) { window.currentVideoId = data.videoId; window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime || 0 }); }
+            else if (data.currentTime !== undefined) {
+                if (Math.abs(window.player.getCurrentTime() - data.currentTime) > 1.5) window.player.seekTo(data.currentTime, true);
+                if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) window.player.playVideo();
+                else if (data.state === 'paused' && window.player.getPlayerState() !== YT.PlayerState.PAUSED) window.player.pauseVideo();
+            }
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
+        });
+    }
+
+    let isMinimized = false;
+    document.getElementById('media-toggle-btn').onclick = () => {
+        isMinimized = !isMinimized;
+        document.getElementById('media-container').className = isMinimized ? 'minimized' : '';
+        document.getElementById('media-toggle-btn').textContent = isMinimized ? '➕' : '➖';
+    };
+</script>
+</body>
+</html>
