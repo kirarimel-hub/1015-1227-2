@@ -90,7 +90,7 @@
 
     <div id="messages"></div>
 
-    <!-- スタンプに 🥺, 🥹, 🌿 を追加済み -->
+    <!-- スタンプ（🥺, 🥹, 🌿 追加済み） -->
     <div id="global-reaction-popup" class="reaction-popup">
         <button class="reaction-emoji-btn">👍</button>
         <button class="reaction-emoji-btn">❤️</button>
@@ -274,7 +274,7 @@
         });
     }
 
-    // --- YouTube プレイヤー & リアルタイム同期機能 ---
+    // --- YouTube プレイヤー & 完全同期機能 ---
     function extractVideoId(url) {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|live\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
         const match = url.match(regExp);
@@ -284,7 +284,7 @@
     document.getElementById('media-share-btn').onclick = async () => {
         const urlInput = document.getElementById('media-url-input').value.trim();
         
-        // 隠しコマンド判定
+        // 隠しコマンド判定 (hal, mel, tel)
         if (urlInput.toLowerCase() === 'hal') {
             window.open("https://steamcommunity.com/id/halsawa/", "_blank");
             document.getElementById('media-url-input').value = '';
@@ -314,31 +314,37 @@
                 await setDoc(doc(db, "shared_media_v4", "current"), {
                     type: 'youtube', videoId: videoId, state: 'playing', currentTime: 0, updatedBy: myId, timestamp: Date.now()
                 });
-                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 300);
+                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
             } catch (e) { console.error(e); }
         }
         document.getElementById('media-url-input').value = '';
     };
 
-    // 再生・一時停止・手動シークイベントのキャッチと送信
+    // 自分の操作（再生・一時停止）をリアルタイムで同期送信
     window.onPlayerStateChangeCallback = async function(event) {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
         
-        let stateString = "paused";
-        if (event.data == YT.PlayerState.PLAYING) stateString = "playing";
-        else if (event.data == YT.PlayerState.BUFFERING) return;
+        let stateString = null;
+        if (event.data === YT.PlayerState.PLAYING) stateString = "playing";
+        else if (event.data === YT.PlayerState.PAUSED) stateString = "paused";
+        else return;
 
         try {
             window.isUpdatingFromFirebase = true;
             const currentTime = typeof window.player.getCurrentTime === 'function' ? window.player.getCurrentTime() : 0;
             await setDoc(doc(db, "shared_media_v4", "current"), {
-                type: 'youtube', videoId: window.currentVideoId, state: stateString, currentTime: currentTime, updatedBy: myId, timestamp: Date.now()
-            });
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 400);
-        } catch (e) {}
+                type: 'youtube', 
+                videoId: window.currentVideoId, 
+                state: stateString, 
+                currentTime: currentTime, 
+                updatedBy: myId, 
+                timestamp: Date.now()
+            }, { merge: true });
+            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
+        } catch (e) { console.error(e); }
     };
 
-    // シーク（飛ばし操作）の監視
+    // シーク（飛ばす・戻す）操作の監視と自動同期
     let lastKnownTime = 0;
     setInterval(async () => {
         if (!window.player || window.isUpdatingFromFirebase || !window.currentVideoId || !db) return;
@@ -346,66 +352,32 @@
 
         try {
             const currentTime = window.player.getCurrentTime();
-            // 手動で動画をスキップ（大きく飛ばす）したかを検知
-            if (Math.abs(currentTime - lastKnownTime) > 2) {
+            // 大きく時間がスキップされた場合（手動飛ばし・戻し）
+            if (Math.abs(currentTime - lastKnownTime) > 1.8) {
                 window.isUpdatingFromFirebase = true;
                 const state = window.player.getPlayerState() === YT.PlayerState.PLAYING ? 'playing' : 'paused';
                 await setDoc(doc(db, "shared_media_v4", "current"), {
-                    type: 'youtube', videoId: window.currentVideoId, state: state, currentTime: currentTime, updatedBy: myId, timestamp: Date.now()
+                    type: 'youtube', 
+                    videoId: window.currentVideoId, 
+                    state: state, 
+                    currentTime: currentTime, 
+                    updatedBy: myId, 
+                    timestamp: Date.now()
                 }, { merge: true });
-                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 400);
+                setTimeout(() => { window.isUpdatingFromFirebase = false; }, 500);
             }
             lastKnownTime = currentTime;
         } catch (e) {}
-    }, 1000);
+    }, 800);
 
-    // Firebaseからのリアルタイム同期（相手の停止・スキップ操作の即時受け取り）
+    // Firebaseからの受信＆相手の操作（再生・停止・シーク）を完全適用
     if (db) {
         onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
             if (!docSnap.exists() || !window.player || typeof window.player.loadVideoById !== 'function') return;
             const data = docSnap.data();
-            if (data.updatedBy === myId) return; // 自分の操作はスルー
+            if (data.updatedBy === myId) return; // 自分の操作発信分は無視
             
             window.isUpdatingFromFirebase = true;
             
-            // 動画の切り替え
-            if (data.videoId && data.videoId !== window.currentVideoId) {
-                window.currentVideoId = data.videoId;
-                window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime || 0 });
-            } else if (data.currentTime !== undefined) {
-                const currentLocalTime = typeof window.player.getCurrentTime === 'function' ? window.player.getCurrentTime() : 0;
-                
-                // 再生位置のズレ（シーク）を即座に合わせる
-                if (Math.abs(currentLocalTime - data.currentTime) > 1.5) {
-                    window.player.seekTo(data.currentTime, true);
-                }
-                
-                // 相手の再生・停止状態に合わせる
-                if (data.state === 'playing' && window.player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                    window.player.playVideo();
-                } else if (data.state === 'paused' && window.player.getPlayerState() === YT.PlayerState.PLAYING) {
-                    window.player.pauseVideo();
-                }
-            }
-            
-            setTimeout(() => { window.isUpdatingFromFirebase = false; }, 300);
-        });
-    }
-
-    // メディア最小化ボタン
-    let isMinimized = false;
-    document.getElementById('media-toggle-btn').onclick = () => {
-        isMinimized = !isMinimized;
-        const container = document.getElementById('media-container');
-        const btn = document.getElementById('media-toggle-btn');
-        if (isMinimized) {
-            container.classList.add('minimized');
-            btn.textContent = '➕';
-        } else {
-            container.classList.remove('minimized');
-            btn.textContent = '➖';
-        }
-    };
-</script>
-</body>
-</html>
+            // 動画ID切り替え
+            if (data.videoId && data.videoId !== window.current
