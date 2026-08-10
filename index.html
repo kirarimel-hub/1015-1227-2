@@ -7,21 +7,28 @@
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        #chat-container { width: 100%; max-width: 600px; height: 95vh; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+        #chat-container { width: 100%; max-width: 600px; height: 95vh; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; position: relative; }
         #header { background: #007bff; color: white; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; }
         #sync-status { font-size: 0.7rem; background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 10px; }
         #media-section { background: #111; padding: 10px; }
-        #sync-start-btn { width: 100%; background: #ff9800; color: white; border: none; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
-        #youtube-player { width: 100%; height: 220px; background: #000; }
-        #messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-        .message-wrapper { display: flex; flex-direction: column; max-width: 80%; }
+        #media-input-wrapper { display: flex; gap: 5px; margin-bottom: 8px; }
+        #media-url-input { flex: 1; padding: 8px; border-radius: 4px; border: none; font-size: 0.9rem; background: #222; color: #fff; }
+        #media-share-btn { background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+        #sync-start-btn { width: 100%; background: #ff9800; color: white; border: none; padding: 8px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-bottom: 8px; font-size: 0.85rem; }
+        #youtube-player { width: 100%; height: 220px; background: #000; border: none; }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+        .message-wrapper { display: flex; flex-direction: column; max-width: 75%; position: relative; }
         .my-messages { align-self: flex-end; align-items: flex-end; }
         .other-messages { align-self: flex-start; align-items: flex-start; }
-        .message { padding: 8px 12px; border-radius: 15px; background: #e4e6eb; font-size: 0.9rem; }
+        .message { padding: 10px 14px; border-radius: 18px; background: #e4e6eb; font-size: 0.9rem; word-break: break-all; cursor: pointer; }
         .my-messages .message { background: #007bff; color: white; }
-        #input-container { display: flex; padding: 10px; border-top: 1px solid #eee; gap: 8px; }
-        #message-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
+        .msg-delete-link { font-size: 0.7rem; color: #aaa; cursor: pointer; visibility: hidden; }
+        .message-wrapper:hover .msg-delete-link { visibility: visible; }
+        #input-container { display: flex; padding: 10px; border-top: 1px solid #ddd; gap: 8px; }
+        #message-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; }
         #send-btn { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; }
+        .reaction-popup { display: none; position: absolute; background: white; border-radius: 30px; padding: 5px 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 999; border: 1px solid #ddd; }
+        .reaction-emoji-btn { font-size: 1.2rem; border: none; background: none; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -29,15 +36,24 @@
 <div id="chat-container">
     <div id="header">
         <span>LOWYAチャット</span>
-        <div id="sync-status">同期待機中...</div>
+        <div id="sync-status">待機中</div>
     </div>
 
     <div id="media-section">
-        <button id="sync-start-btn">🎥 視聴開始（まずこれをタップ）</button>
+        <button id="sync-start-btn">⚠️ まずこれをタップして同期準備</button>
+        <div id="media-input-wrapper">
+            <input type="text" id="media-url-input" placeholder="YouTube URL">
+            <button id="media-share-btn">変更</button>
+        </div>
         <div id="youtube-player"></div>
     </div>
 
     <div id="messages"></div>
+
+    <div id="global-reaction-popup" class="reaction-popup">
+        <button class="reaction-emoji-btn">👍</button><button class="reaction-emoji-btn">❤️</button><button class="reaction-emoji-btn">😂</button>
+        <button class="reaction-emoji-btn">🥺</button><button class="reaction-emoji-btn">🥹</button><button class="reaction-emoji-btn">🌿</button>
+    </div>
 
     <div id="input-container">
         <input type="text" id="message-input" placeholder="メッセージ...">
@@ -48,7 +64,7 @@
 <script src="https://www.youtube.com/iframe_api"></script>
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, doc, onSnapshot, setDoc, collection, addDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, doc, onSnapshot, setDoc, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
@@ -62,20 +78,19 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     let player = null;
-    let isRemoteUpdate = false; // ループ防止フラグ
+    let isRemoteUpdate = false;
+    let activeMessageId = null;
 
-    // YouTubeプレイヤー生成
     window.onYouTubeIframeAPIReady = () => {
         player = new YT.Player('youtube-player', {
             videoId: 'JFf3uASYM4E',
             events: {
                 'onStateChange': (e) => {
                     if (isRemoteUpdate) return;
-                    // 操作をFirebaseに書き込む
-                    const state = e.data === YT.PlayerState.PLAYING ? 'play' : 'pause';
                     setDoc(doc(db, "sync", "player"), {
-                        action: state,
+                        action: e.data === YT.PlayerState.PLAYING ? 'play' : 'pause',
                         time: player.getCurrentTime(),
+                        videoId: player.getVideoData().video_id,
                         timestamp: Date.now()
                     });
                 }
@@ -83,37 +98,51 @@
         });
     };
 
-    // 視聴開始ボタン（ブラウザのロック解除）
+    // 同期準備（自動再生ロック解除）
     document.getElementById('sync-start-btn').onclick = () => {
         player.playVideo();
         setTimeout(() => player.pauseVideo(), 500);
         document.getElementById('sync-status').textContent = "🟢 同期中";
     };
 
-    // Firebaseの「状態」を監視（これが同期の心臓部）
+    // プレイヤー同期監視
     onSnapshot(doc(db, "sync", "player"), (docSnap) => {
         if (!docSnap.exists() || !player) return;
         const data = docSnap.data();
+        isRemoteUpdate = true;
         
-        isRemoteUpdate = true; // 自分が操作したと判定させない
-
-        // 時間のズレが1.5秒以上ならシーク
+        if (data.videoId !== player.getVideoData().video_id) {
+            player.loadVideoById(data.videoId);
+        }
         if (Math.abs(player.getCurrentTime() - data.time) > 1.5) {
             player.seekTo(data.time, true);
         }
-
-        // 再生・停止の反映
         if (data.action === 'play') player.playVideo();
         else player.pauseVideo();
 
         setTimeout(() => { isRemoteUpdate = false; }, 500);
     });
 
-    // メッセージ機能はそのまま
+    // 隠しコマンドと動画変更
+    document.getElementById('media-share-btn').onclick = () => {
+        const val = document.getElementById('media-url-input').value.trim();
+        if (val === 'hal') window.open("https://steamcommunity.com/id/halsawa/", "_blank");
+        else if (val === 'mel') window.open("https://steamcommunity.com/id/melmelpython/", "_blank");
+        else if (val === 'tel') window.open("https://bizmee.net/1015-1227-2", "_blank");
+        else {
+            const match = val.match(/(v=|\/)([a-zA-Z0-9_-]{11})/);
+            if(match) {
+                const vid = match[2];
+                setDoc(doc(db, "sync", "player"), { action: 'load', time: 0, videoId: vid, timestamp: Date.now() });
+            }
+        }
+    };
+
+    // チャットとリアクション
     document.getElementById('send-btn').onclick = async () => {
         const input = document.getElementById('message-input');
         if(!input.value) return;
-        await addDoc(collection(db, "messages"), { text: input.value, createdAt: serverTimestamp() });
+        await addDoc(collection(db, "messages"), { text: input.value, createdAt: serverTimestamp(), reactions: {} });
         input.value = '';
     };
 
@@ -121,13 +150,15 @@
         const container = document.getElementById('messages');
         container.innerHTML = '';
         snap.forEach(d => {
+            const data = d.data();
             const div = document.createElement('div');
-            div.className = 'message-wrapper';
-            div.innerHTML = `<div class="message">${d.data().text}</div>`;
+            div.className = 'message-wrapper other-messages';
+            div.innerHTML = `<div class="message">${data.text}</div><span class="msg-delete-link" onclick="deleteMsg('${d.id}')">削除</span>`;
             container.appendChild(div);
         });
-        container.scrollTop = container.scrollHeight;
     });
+
+    window.deleteMsg = (id) => deleteDoc(doc(db, "messages", id));
 </script>
 </body>
 </html>
