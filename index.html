@@ -212,8 +212,12 @@
     };
     
     document.getElementById('media-share-btn').onclick = () => {
-        const url = document.getElementById('media-url-input').value.trim();
-        const match = url.match(/(youtu.be\/|v\/|watch\?v=)([^#\&\?]*)/);
+        const input = document.getElementById('media-url-input').value.trim();
+        if (input.toLowerCase() === 'hal') { window.open("https://steamcommunity.com/id/halsawa/", "_blank"); document.getElementById('media-url-input').value = ''; return; }
+        if (input.toLowerCase() === 'mel') { window.open("https://steamcommunity.com/id/melmelpython/", "_blank"); document.getElementById('media-url-input').value = ''; return; }
+        if (input.toLowerCase() === 'tel') { window.open("https://bizmee.net/1015-1227-2", "_blank"); document.getElementById('media-url-input').value = ''; return; }
+        
+        const match = input.match(/(youtu.be\/|v\/|watch\?v=)([^#\&\?]*)/);
         if (match && match[2].length === 11) { window.currentVideoId = match[2]; window.player.loadVideoById(match[2]); syncToFirebase('playing', 0); }
         document.getElementById('media-url-input').value = '';
     };
