@@ -98,14 +98,17 @@
         window.player = new YT.Player('youtube-player', {
             height: '100%', width: '100%', videoId: window.currentVideoId,
             playerVars: { 'autoplay': 1, 'controls': 1 },
-            events: { 'onStateChange': (e) => { if(window.onPlayerStateChangeCallback) window.onPlayerStateChangeCallback(e); } }
+            events: { 
+                'onReady': () => { if(window.loadInitialVideo) window.loadInitialVideo(); },
+                'onStateChange': (e) => { if(window.onPlayerStateChangeCallback) window.onPlayerStateChangeCallback(e); } 
+            }
         });
     };
 </script>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, getDocs, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDkCdoQOuL9Kh0T0P9CCJPL39WMkT5t-nw",
@@ -121,6 +124,16 @@
     const myId = Math.random().toString(36).substring(2, 9);
     let isUpdatingFromFirebase = false;
     let activeMessageId = null;
+
+    // --- 同期初期化 ---
+    window.loadInitialVideo = async () => {
+        const snap = await getDoc(doc(db, "shared_media_v4", "current"));
+        if (snap.exists()) {
+            const data = snap.data();
+            window.currentVideoId = data.videoId;
+            window.player.loadVideoById({ videoId: data.videoId, startSeconds: data.currentTime });
+        }
+    };
 
     // --- 同期ロジック ---
     window.onPlayerStateChangeCallback = function(event) {
