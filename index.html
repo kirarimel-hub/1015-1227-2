@@ -10,7 +10,6 @@
         #chat-container { width: 100%; max-width: 600px; height: 95vh; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; position: relative; }
         #header { background: #007bff; color: white; padding: 10px 12px; display: flex; justify-content: flex-end; align-items: center; flex-shrink: 0; }
         
-        /* メディア関連 */
         #media-section { background: #111; padding: 10px; flex-shrink: 0; }
         #media-input-wrapper { display: flex; gap: 5px; margin-bottom: 10px; }
         #media-url-input { flex: 1; padding: 8px; border-radius: 4px; border: none; font-size: 0.9rem; background: #222; color: #fff; outline: none; }
@@ -23,7 +22,6 @@
         #media-screen { width: 100%; height: 240px; background: #000; position: relative; }
         #youtube-player { width: 100%; height: 100%; border: none; }
 
-        /* チャットエリア */
         #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; background: #fff; }
         .message-wrapper { display: flex; flex-direction: column; max-width: 75%; position: relative; margin-bottom: 5px; }
         .my-messages { align-self: flex-end; align-items: flex-end; }
@@ -33,24 +31,23 @@
 
         .message { padding: 10px 14px; border-radius: 18px; background: #e4e6eb; font-size: 0.9rem; word-break: break-all; white-space: pre-wrap; cursor: pointer; transition: transform 0.1s; position: relative; user-select: none; }
         .my-messages .message { background: #007bff; color: white; }
+        .message img { max-width: 100%; max-height: 200px; border-radius: 12px; display: block; }
         
-        /* リアクション */
         .reaction-badge-container { display: flex; gap: 3px; position: absolute; bottom: -12px; background: white; padding: 2px 6px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.15); border: 1px solid #eee; font-size: 0.75rem; cursor: pointer; z-index: 2; pointer-events: auto; color: #333; }
         .my-messages .reaction-badge-container { right: 10px; }
         .other-messages .reaction-badge-container { left: 10px; }
 
-        /* スタンプポップアップ */
         .reaction-popup { display: none; position: absolute; background: white; border-radius: 30px; padding: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); gap: 8px; z-index: 999; border: 1px solid #ddd; flex-wrap: wrap; width: 220px; justify-content: center; }
         .reaction-emoji-btn { font-size: 1.3rem; border: none; background: none; cursor: pointer; padding: 4px; transition: transform 0.1s; }
         .reaction-emoji-btn:hover { transform: scale(1.25); }
 
-        /* 削除リンク */
         .msg-delete-link { font-size: 0.7rem; color: #aaa; text-decoration: none; cursor: pointer; visibility: hidden; margin: 0 4px; padding-bottom: 2px; }
         .message-wrapper:hover .msg-delete-link { visibility: visible; }
         
         #input-container { display: flex; padding: 10px; border-top: 1px solid #ddd; gap: 8px; background: white; flex-shrink: 0; align-items: center; }
         #message-input { flex: 1; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 0.95rem; }
         #send-btn { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        #photo-btn { background: #f0f2f5; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; display: flex; justify-content: center; align-items: center; }
     </style>
 </head>
 <body>
@@ -85,6 +82,8 @@
     </div>
 
     <div id="input-container">
+        <button id="photo-btn" onclick="document.getElementById('file-input').click()">➕</button>
+        <input type="file" id="file-input" accept="image/*" style="display:none">
         <input type="text" id="message-input" placeholder="メッセージを入力...">
         <button id="send-btn">送信</button>
     </div>
@@ -125,7 +124,6 @@
     let isUpdatingFromFirebase = false;
     let activeMessageId = null;
 
-    // --- 同期初期化 ---
     window.loadInitialVideo = async () => {
         const snap = await getDoc(doc(db, "shared_media_v4", "current"));
         if (snap.exists()) {
@@ -135,7 +133,6 @@
         }
     };
 
-    // --- 同期ロジック ---
     window.onPlayerStateChangeCallback = function(event) {
         if (isUpdatingFromFirebase) return;
         syncToFirebase((event.data === YT.PlayerState.PLAYING) ? "playing" : "paused", window.player.getCurrentTime());
@@ -164,7 +161,6 @@
         setTimeout(() => { isUpdatingFromFirebase = false; }, 500);
     });
 
-    // --- チャット・スタンプ・削除機能 ---
     const container = document.getElementById('messages');
     const popup = document.getElementById('global-reaction-popup');
 
@@ -204,7 +200,12 @@
             wrapper.className = `message-wrapper ${data.senderId === myId ? 'my-messages' : 'other-messages'}`;
             const row = document.createElement('div'); row.className = 'message-row';
             const msg = document.createElement('div'); msg.className = 'message';
-            msg.textContent = data.text;
+            
+            if (data.image) {
+                const img = document.createElement('img'); img.src = data.image; msg.appendChild(img);
+            } else {
+                msg.textContent = data.text;
+            }
             msg.onclick = (e) => window.openReactionMenu(e, msgId);
             
             let badgeText = "";
@@ -223,12 +224,26 @@
         const input = document.getElementById('message-input');
         if (input.value.trim()) { await addDoc(collection(db, "chat_messages"), { senderId: myId, text: input.value.trim(), createdAt: serverTimestamp(), reactions: {} }); input.value = ''; }
     };
+
+    document.getElementById('file-input').onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            await addDoc(collection(db, "chat_messages"), { senderId: myId, image: event.target.result, createdAt: serverTimestamp(), reactions: {} });
+        };
+        reader.readAsDataURL(file);
+    };
     
     document.getElementById('media-share-btn').onclick = () => {
         const input = document.getElementById('media-url-input').value.trim();
-        if (input.toLowerCase() === 'hal') { window.open("https://steamcommunity.com/id/halsawa/", "_blank"); document.getElementById('media-url-input').value = ''; return; }
-        if (input.toLowerCase() === 'mel') { window.open("https://steamcommunity.com/id/melmelpython/", "_blank"); document.getElementById('media-url-input').value = ''; return; }
-        if (input.toLowerCase() === 'tel') { window.open("https://bizmee.net/1015-1227-2", "_blank"); document.getElementById('media-url-input').value = ''; return; }
+        const cmds = {
+            'hal': "https://steamcommunity.com/id/halsawa/",
+            'mel': "https://steamcommunity.com/id/melmelpython/",
+            'tel': "https://bizmee.net/1015-1227-2",
+            'tver': "https://kirarimel-hub.github.io/test/"
+        };
+        if (cmds[input.toLowerCase()]) { window.open(cmds[input.toLowerCase()], "_blank"); document.getElementById('media-url-input').value = ''; return; }
         
         const match = input.match(/(youtu.be\/|v\/|watch\?v=)([^#\&\?]*)/);
         if (match && match[2].length === 11) { window.currentVideoId = match[2]; window.player.loadVideoById(match[2]); syncToFirebase('playing', 0); }
