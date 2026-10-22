@@ -157,9 +157,12 @@
         try { await setDoc(doc(db, "shared_media_v4", "current"), { videoId: window.currentVideoId, state, currentTime: time, updatedBy: myId, timestamp: Date.now() }); } catch (e) {}
     }
 
+    // ★負荷軽減：同期チェックの頻度を5秒に1回に変更（以前は2秒）
     setInterval(() => {
-        if (window.player?.getPlayerState?.() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase) syncToFirebase("playing", window.player.getCurrentTime());
-    }, 2000);
+        if (window.player?.getPlayerState?.() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase) {
+            syncToFirebase("playing", window.player.getCurrentTime());
+        }
+    }, 5000);
 
     // 動画同期のリアルタイム受信（エラーハンドリング付き）
     onSnapshot(doc(db, "shared_media_v4", "current"), (docSnap) => {
@@ -225,7 +228,7 @@
         }
     };
 
-    // チャットメッセージのリアルタイム受信（エラーで停止しないよう改善）
+    // チャットメッセージのリアルタイム受信
     onSnapshot(query(collection(db, "chat_messages"), orderBy("createdAt", "asc")), (snap) => {
         container.innerHTML = '';
         snap.forEach(d => {
@@ -264,7 +267,7 @@
         console.error("Chat snapshot error:", error);
     });
 
-    // メッセージ送信処理の強化
+    // メッセージ送信処理
     document.getElementById('send-btn').onclick = async () => {
         const input = document.getElementById('message-input');
         const text = input.value.trim();
@@ -280,7 +283,7 @@
 
     document.getElementById('message-input').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('send-btn').click(); };
 
-    // 画像の高度な圧縮処理（最大500pxまで軽量化して容量エラーを確実に防御）
+    // 画像の圧縮処理
     function processAndSendImage(file) {
         if (!file) return;
         const reader = new FileReader();
