@@ -157,7 +157,7 @@
         try { await setDoc(doc(db, "shared_media_v4", "current"), { videoId: window.currentVideoId, state, currentTime: time, updatedBy: myId, timestamp: Date.now() }); } catch (e) {}
     }
 
-    // ★負荷軽減：同期チェックの頻度を5秒に1回に変更（以前は2秒）
+    // 同期チェックの頻度を5秒に1回に軽減
     setInterval(() => {
         if (window.player?.getPlayerState?.() === YT.PlayerState.PLAYING && !isUpdatingFromFirebase) {
             syncToFirebase("playing", window.player.getCurrentTime());
@@ -336,7 +336,9 @@
             'chat': "https://kirarimel-hub.github.io/1015-1227-2/",
             '鐘': "https://note.com/mute_1015_1227",
             'ぶぶ': "https://note.com/mild_fox1814",
-            'チャット': "https://kirarimel-hub.github.io/test/"
+            'チャット': "https://kirarimel-hub.github.io/test/",
+            'るみりこ': "https://x.com/rumiriko_4",
+            'すあま': "https://x.com/suama_mame"
         };
         if (cmds[input.toLowerCase()]) { window.open(cmds[input.toLowerCase()], "_blank"); document.getElementById('media-url-input').value = ''; return; }
         
